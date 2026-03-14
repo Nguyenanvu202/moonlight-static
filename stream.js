@@ -14,7 +14,8 @@ import { Stream } from "./stream/index.js";
 import { getModalBackground, showMessage, showModal } from "./component/modal/index.js";
 import { getSidebarRoot, setSidebar, setSidebarExtended, setSidebarStyle } from "./component/sidebar/index.js";
 import { defaultStreamInputConfig } from "./stream/input.js";
-import { defaultSettings, getLocalStreamSettings, setLocalStreamSettings, StreamSettingsComponent } from "./component/settings_menu.js";
+import { exportAppSettingsToFile, getSettingsForApp, importAppSettingsFromJson, loadStaticAppSettingsFile, setSettingsForApp, } from "./app_settings.js";
+import { StreamSettingsComponent } from "./component/settings_menu.js";
 import { setStyle as setPageStyle } from "./styles/index.js";
 import { SelectComponent } from "./component/input.js";
 import { StreamKeys } from "./api_bindings.js";
@@ -40,6 +41,7 @@ function startApp() {
         }
         const hostId = Number.parseInt(hostIdStr);
         const appId = Number.parseInt(appIdStr);
+        yield loadStaticAppSettingsFile();
         // event propagation on overlays
         const sidebarRoot = getSidebarRoot();
         if (sidebarRoot) {
@@ -67,7 +69,6 @@ window.requestAnimationFrame(() => {
 startApp();
 class ViewerApp {
     constructor(api, hostId, appId) {
-        var _a;
         this.div = document.createElement("div");
         this.statsDiv = document.createElement("div");
         this.stream = null;
@@ -97,8 +98,8 @@ class ViewerApp {
             }
         }, 100);
         this.div.appendChild(this.statsDiv);
-        // Configure stream
-        const settings = (_a = getLocalStreamSettings()) !== null && _a !== void 0 ? _a : defaultSettings();
+        // Configure stream (per-app: from localStorage or app_settings.json)
+        const settings = getSettingsForApp(appId);
         let browserWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
         let browserHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
         this.previousMouseMode = this.inputConfig.mouseMode;
@@ -161,6 +162,12 @@ class ViewerApp {
             this.stream.getInput().addScreenKeyboardVisibleEvent(this.onScreenKeyboardSetVisible.bind(this));
             this.stream.mount(this.div);
         });
+    }
+    getAppId() {
+        return this.appId;
+    }
+    getHostId() {
+        return this.hostId;
     }
     /** Graceful restart: stop current stream, then start again with new settings (no page refresh). */
     restartStreamWithNewSettings(settings) {
@@ -633,17 +640,166 @@ class SettingsPanelModal {
         this.wrapper.appendChild(header);
         this.content.classList.add("modal-settings-panel-content");
         this.wrapper.appendChild(this.content);
-        this.settingsComponent = new StreamSettingsComponent((_a = getLocalStreamSettings()) !== null && _a !== void 0 ? _a : undefined);
+        // Stream settings UI (per-app)
+        this.settingsComponent = new StreamSettingsComponent((_a = getSettingsForApp(this.app.getAppId())) !== null && _a !== void 0 ? _a : undefined);
         this.settingsComponent.addChangeListener(() => {
             const s = this.settingsComponent.getStreamSettings();
-            setLocalStreamSettings(s);
+            setSettingsForApp(this.app.getAppId(), s);
             setPageStyle(s.pageStyle);
         });
+        // Export / Import app_settings.json
+        const fileSection = document.createElement("div");
+        fileSection.style.marginTop = "1rem";
+        const fileTitle = document.createElement("h3");
+        fileTitle.innerText = "Per-app settings file";
+        fileSection.appendChild(fileTitle);
+        const exportBtn = document.createElement("button");
+        exportBtn.innerText = "Export app_settings.json";
+        exportBtn.style.marginRight = "0.5rem";
+        exportBtn.addEventListener("click", () => exportAppSettingsToFile());
+        fileSection.appendChild(exportBtn);
+        const importBtn = document.createElement("button");
+        importBtn.innerText = "Import from file";
+        const importInput = document.createElement("input");
+        importInput.type = "file";
+        importInput.accept = "application/json,.json";
+        importInput.style.display = "none";
+        importInput.addEventListener("change", () => {
+            var _a;
+            const file = (_a = importInput.files) === null || _a === void 0 ? void 0 : _a[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const text = reader.result;
+                    if (text)
+                        importAppSettingsFromJson(text);
+                    importInput.value = "";
+                };
+                reader.readAsText(file);
+            }
+        });
+        importBtn.addEventListener("click", () => importInput.click());
+        fileSection.appendChild(importBtn);
+        fileSection.appendChild(importInput);
+        this.content.appendChild(fileSection);
+        // Cloudflare Speedtest section
+        const speedtestContainer = document.createElement("div");
+        speedtestContainer.style.marginTop = "1rem";
+        const speedtestTitle = document.createElement("h3");
+        speedtestTitle.innerText = "Connection Speed Test";
+        speedtestContainer.appendChild(speedtestTitle);
+        const speedtestButton = document.createElement("button");
+        speedtestButton.innerText = "Test SpeedTest";
+        speedtestContainer.appendChild(speedtestButton);
+        const speedtestResult = document.createElement("div");
+        speedtestResult.innerText = "Speed test not run yet.";
+        speedtestResult.style.whiteSpace = "pre-line";
+        speedtestResult.style.marginTop = "0.5rem";
+        speedtestContainer.appendChild(speedtestResult);
+        speedtestButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
+            speedtestButton.disabled = true;
+            speedtestResult.innerText = "Running speed test… This may take some time.";
+            try {
+                // Clear old resource timings so getEntriesByName() can find speed-test entries (avoids transferSize undefined)
+                if (typeof performance !== "undefined" && performance.clearResourceTimings) {
+                    performance.clearResourceTimings();
+                }
+                const module = yield import("@cloudflare/speedtest");
+                const SpeedTestCtor = (_a = module.default) !== null && _a !== void 0 ? _a : module;
+                // Omit packetLoss step to avoid CORS: turn-creds only allows speed.cloudflare.com
+                const measurementsNoPacketLoss = [
+                    { type: "latency", numPackets: 1 },
+                    { type: "download", bytes: 1e5, count: 1, bypassMinDuration: true },
+                    { type: "latency", numPackets: 20 },
+                    { type: "download", bytes: 1e5, count: 9 },
+                    { type: "download", bytes: 1e6, count: 8 },
+                    { type: "upload", bytes: 1e5, count: 8 },
+                    { type: "upload", bytes: 1e6, count: 6 },
+                    { type: "download", bytes: 1e7, count: 6 },
+                    { type: "upload", bytes: 1e7, count: 4 },
+                    { type: "download", bytes: 2.5e7, count: 4 },
+                    { type: "upload", bytes: 2.5e7, count: 4 },
+                    { type: "download", bytes: 1e8, count: 3 },
+                    { type: "upload", bytes: 5e7, count: 3 },
+                    { type: "download", bytes: 2.5e8, count: 2 },
+                ];
+                const test = new SpeedTestCtor({ autoStart: false, measurements: measurementsNoPacketLoss });
+                test.onFinish = (results) => {
+                    try {
+                        const down = results.getDownloadBandwidth && results.getDownloadBandwidth();
+                        const up = results.getUploadBandwidth && results.getUploadBandwidth();
+                        const latency = results.getUnloadedLatency && results.getUnloadedLatency();
+                        const lines = [];
+                        if (down != null) {
+                            lines.push(`Download: ${(down / 1e6).toFixed(2)} Mbps`);
+                        }
+                        if (up != null) {
+                            lines.push(`Upload: ${(up / 1e6).toFixed(2)} Mbps`);
+                        }
+                        if (latency != null) {
+                            lines.push(`Latency: ${latency.toFixed(1)} ms`);
+                        }
+                        // Calculate a recommended Moonlight bitrate and video preset from download+latency.
+                        if (down != null) {
+                            const downloadMbps = down / 1e6;
+                            let usable = downloadMbps * 0.35;
+                            if (latency != null && latency > 80) {
+                                usable *= 0.7;
+                            }
+                            // Clamp to [10, 70] Mbps and snap to nearest 10 Mbps tier
+                            usable = Math.max(10, Math.min(usable, 70));
+                            const tierMbps = Math.round(usable / 10) * 10;
+                            const tierKbps = tierMbps * 1000;
+                            let presetText;
+                            if (tierMbps < 20) {
+                                presetText = "1280 x 720 | HD | 60 FPS";
+                            }
+                            else if (tierMbps < 40) {
+                                presetText = "1920 x 1080 | FHD | 30 FPS";
+                            }
+                            else {
+                                presetText = "1920 x 1080 | FHD | 60 FPS";
+                            }
+                            lines.push(`Recommended video: ${presetText} | ${tierMbps.toFixed(0)} Mbps (${tierKbps.toFixed(0)} Kbps)`);
+                            window.mlLastSpeedtestTierMbps = tierMbps;
+                        }
+                        if (lines.length === 0) {
+                            lines.push("Speed test finished, but no metrics were available.");
+                        }
+                        speedtestResult.innerText = lines.join("\n");
+                    }
+                    catch (e) {
+                        speedtestResult.innerText = "Speed test finished, but results could not be read.";
+                    }
+                    finally {
+                        speedtestButton.disabled = false;
+                    }
+                };
+                test.onError = (error) => {
+                    const message = typeof error === "string"
+                        ? error
+                        : (error && error.message) || "Unknown error";
+                    const isTransferSize = /transferSize/i.test(String(message));
+                    const hint = isTransferSize
+                        ? " Try refreshing the page and run the test again, or run a full test at speed.cloudflare.com."
+                        : "";
+                    speedtestResult.innerText = "Speed test failed: " + message + hint;
+                    speedtestButton.disabled = false;
+                };
+                test.play();
+            }
+            catch (e) {
+                speedtestResult.innerText = "Failed to start speed test: " + ((_b = e === null || e === void 0 ? void 0 : e.message) !== null && _b !== void 0 ? _b : String(e));
+                speedtestButton.disabled = false;
+            }
+        }));
+        this.content.appendChild(speedtestContainer);
     }
     onApply() {
         return __awaiter(this, void 0, void 0, function* () {
             const settings = this.settingsComponent.getStreamSettings();
-            setLocalStreamSettings(settings);
+            setSettingsForApp(this.app.getAppId(), settings);
             setPageStyle(settings.pageStyle);
             this.resolve(null);
             yield this.app.restartStreamWithNewSettings(settings);

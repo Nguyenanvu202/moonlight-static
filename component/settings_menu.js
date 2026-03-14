@@ -1,5 +1,21 @@
 import { ComponentEvent } from "./index.js";
 import { InputComponent, SelectComponent } from "./input.js";
+const VIDEO_PRESETS = [
+    { id: "720p", width: 1280, height: 720, baseLabel: "1280 x 720 | HD", minMbps: 10, maxMbps: 25 },
+    { id: "1080p", width: 1920, height: 1080, baseLabel: "1920 x 1080 | FHD", minMbps: 20, maxMbps: 40 },
+    { id: "1440p", width: 2560, height: 1440, baseLabel: "2560 x 1440 | QHD", minMbps: 35, maxMbps: 55 },
+    { id: "4k", width: 3840, height: 2160, baseLabel: "3840 x 2160 | 4K", minMbps: 50, maxMbps: 70 },
+    { id: "native", baseLabel: "Native (host)", minMbps: 20, maxMbps: 60 },
+    { id: "custom", baseLabel: "Custom…", minMbps: 10, maxMbps: 70 },
+];
+function getVideoPresetOptions() {
+    var _a;
+    const lastTierMbps = (_a = (typeof window !== "undefined" && window.mlLastSpeedtestTierMbps)) !== null && _a !== void 0 ? _a : 40;
+    return VIDEO_PRESETS.map(preset => {
+        const clamped = Math.max(preset.minMbps, Math.min(lastTierMbps, preset.maxMbps));
+        return { value: preset.id, name: `${preset.baseLabel} | ${clamped} Mbps` };
+    });
+}
 import DEFAULT_SETTINGS from "../default_settings.js";
 export function defaultSettings() {
     // We are deep cloning this
@@ -35,7 +51,7 @@ export function setLocalStreamSettings(settings) {
 }
 export class StreamSettingsComponent {
     constructor(settings) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
         this.divElement = document.createElement("div");
         this.sidebarHeader = document.createElement("h2");
         this.streamHeader = document.createElement("h2");
@@ -91,36 +107,29 @@ export class StreamSettingsComponent {
         });
         this.fps.addChangeListener(this.onSettingsChange.bind(this));
         this.fps.mount(this.divElement);
-        // Video Size
-        this.videoSize = new SelectComponent("videoSize", [
-            { value: "720p", name: "720p" },
-            { value: "1080p", name: "1080p" },
-            { value: "1440p", name: "1440p" },
-            { value: "4k", name: "4k" },
-            { value: "native", name: "native" },
-            { value: "custom", name: "custom" }
-        ], {
-            displayName: "Video Size",
-            preSelectedOption: (settings === null || settings === void 0 ? void 0 : settings.videoSize) || defaultSettings_.videoSize
+        // Video Preset (single combobox: resolution + bitrate recommendation from speedtest)
+        this.videoSize = new SelectComponent("videoPreset", getVideoPresetOptions(), {
+            displayName: "Video Preset",
+            preSelectedOption: (_e = settings === null || settings === void 0 ? void 0 : settings.videoSize) !== null && _e !== void 0 ? _e : defaultSettings_.videoSize,
         });
         this.videoSize.addChangeListener(this.onSettingsChange.bind(this));
         this.videoSize.mount(this.divElement);
         this.videoSizeWidth = new InputComponent("videoSizeWidth", "number", "Video Width", {
             defaultValue: defaultSettings_.videoSizeCustom.width.toString(),
-            value: settings === null || settings === void 0 ? void 0 : settings.videoSizeCustom.width.toString()
+            value: settings === null || settings === void 0 ? void 0 : settings.videoSizeCustom.width.toString(),
         });
         this.videoSizeWidth.addChangeListener(this.onSettingsChange.bind(this));
         this.videoSizeWidth.mount(this.divElement);
         this.videoSizeHeight = new InputComponent("videoSizeHeight", "number", "Video Height", {
             defaultValue: defaultSettings_.videoSizeCustom.height.toString(),
-            value: settings === null || settings === void 0 ? void 0 : settings.videoSizeCustom.height.toString()
+            value: settings === null || settings === void 0 ? void 0 : settings.videoSizeCustom.height.toString(),
         });
         this.videoSizeHeight.addChangeListener(this.onSettingsChange.bind(this));
         this.videoSizeHeight.mount(this.divElement);
         // Video Sample Queue Size
         this.videoSampleQueueSize = new InputComponent("videoFrameQueueSize", "number", "Video Frame Queue Size", {
             defaultValue: defaultSettings_.videoFrameQueueSize.toString(),
-            value: (_e = settings === null || settings === void 0 ? void 0 : settings.videoFrameQueueSize) === null || _e === void 0 ? void 0 : _e.toString()
+            value: (_f = settings === null || settings === void 0 ? void 0 : settings.videoFrameQueueSize) === null || _f === void 0 ? void 0 : _f.toString()
         });
         this.videoSampleQueueSize.addChangeListener(this.onSettingsChange.bind(this));
         this.videoSampleQueueSize.mount(this.divElement);
@@ -132,13 +141,13 @@ export class StreamSettingsComponent {
             { value: "av1", name: "AV1 (Experimental)" },
         ], {
             displayName: "Video Codec",
-            preSelectedOption: (_f = settings === null || settings === void 0 ? void 0 : settings.videoCodec) !== null && _f !== void 0 ? _f : defaultSettings_.videoCodec
+            preSelectedOption: (_g = settings === null || settings === void 0 ? void 0 : settings.videoCodec) !== null && _g !== void 0 ? _g : defaultSettings_.videoCodec
         });
         this.videoCodec.addChangeListener(this.onSettingsChange.bind(this));
         this.videoCodec.mount(this.divElement);
         // Force Video Element renderer
         this.forceVideoElementRenderer = new InputComponent("forceVideoElementRenderer", "checkbox", "Force Video Element Renderer (WebRTC only)", {
-            checked: (_g = settings === null || settings === void 0 ? void 0 : settings.forceVideoElementRenderer) !== null && _g !== void 0 ? _g : defaultSettings_.forceVideoElementRenderer
+            checked: (_h = settings === null || settings === void 0 ? void 0 : settings.forceVideoElementRenderer) !== null && _h !== void 0 ? _h : defaultSettings_.forceVideoElementRenderer
         });
         this.forceVideoElementRenderer.addChangeListener(this.onSettingsChange.bind(this));
         this.forceVideoElementRenderer.mount(this.divElement);
@@ -151,13 +160,13 @@ export class StreamSettingsComponent {
         this.canvasRenderer.mount(this.divElement);
         // Canvas VSync (Canvas only: sync draw to display refresh to reduce tearing; off = lower latency)
         this.canvasVsync = new InputComponent("canvasVsync", "checkbox", "Canvas VSync (reduce tearing)", {
-            checked: (_h = settings === null || settings === void 0 ? void 0 : settings.canvasVsync) !== null && _h !== void 0 ? _h : defaultSettings_.canvasVsync
+            checked: (_j = settings === null || settings === void 0 ? void 0 : settings.canvasVsync) !== null && _j !== void 0 ? _j : defaultSettings_.canvasVsync
         });
         this.canvasVsync.addChangeListener(this.onSettingsChange.bind(this));
         this.canvasVsync.mount(this.divElement);
         // HDR
         this.hdr = new InputComponent("hdr", "checkbox", "Enable HDR", {
-            checked: (_j = settings === null || settings === void 0 ? void 0 : settings.hdr) !== null && _j !== void 0 ? _j : defaultSettings_.hdr
+            checked: (_k = settings === null || settings === void 0 ? void 0 : settings.hdr) !== null && _k !== void 0 ? _k : defaultSettings_.hdr
         });
         this.hdr.addChangeListener(this.onSettingsChange.bind(this));
         this.hdr.mount(this.divElement);
@@ -172,7 +181,7 @@ export class StreamSettingsComponent {
         // Audio Sample Queue Size
         this.audioSampleQueueSize = new InputComponent("audioSampleQueueSize", "number", "Audio Sample Queue Size", {
             defaultValue: defaultSettings_.audioSampleQueueSize.toString(),
-            value: (_k = settings === null || settings === void 0 ? void 0 : settings.audioSampleQueueSize) === null || _k === void 0 ? void 0 : _k.toString()
+            value: (_l = settings === null || settings === void 0 ? void 0 : settings.audioSampleQueueSize) === null || _l === void 0 ? void 0 : _l.toString()
         });
         this.audioSampleQueueSize.addChangeListener(this.onSettingsChange.bind(this));
         this.audioSampleQueueSize.mount(this.divElement);
@@ -210,7 +219,7 @@ export class StreamSettingsComponent {
         this.controllerSendIntervalOverride = new InputComponent("controllerSendIntervalOverride", "number", "Override Controller State Send Interval", {
             hasEnableCheckbox: true,
             defaultValue: "20",
-            value: (_l = settings === null || settings === void 0 ? void 0 : settings.controllerConfig.sendIntervalOverride) === null || _l === void 0 ? void 0 : _l.toString(),
+            value: (_m = settings === null || settings === void 0 ? void 0 : settings.controllerConfig.sendIntervalOverride) === null || _m === void 0 ? void 0 : _m.toString(),
             numberSlider: {
                 range_min: 10,
                 range_max: 120
@@ -232,7 +241,7 @@ export class StreamSettingsComponent {
             { value: "websocket", name: "Web Socket (Experimental)" },
         ], {
             displayName: "Data Transport",
-            preSelectedOption: (_m = settings === null || settings === void 0 ? void 0 : settings.dataTransport) !== null && _m !== void 0 ? _m : defaultSettings_.dataTransport
+            preSelectedOption: (_o = settings === null || settings === void 0 ? void 0 : settings.dataTransport) !== null && _o !== void 0 ? _o : defaultSettings_.dataTransport
         });
         this.dataTransport.addChangeListener(this.onSettingsChange.bind(this));
         this.dataTransport.mount(this.divElement);
@@ -246,25 +255,31 @@ export class StreamSettingsComponent {
             { value: "moonlight", name: "Moonlight" },
         ], {
             displayName: "Style",
-            preSelectedOption: (_o = settings === null || settings === void 0 ? void 0 : settings.pageStyle) !== null && _o !== void 0 ? _o : defaultSettings_.pageStyle
+            preSelectedOption: (_p = settings === null || settings === void 0 ? void 0 : settings.pageStyle) !== null && _p !== void 0 ? _p : defaultSettings_.pageStyle
         });
         this.pageStyle.addChangeListener(this.onSettingsChange.bind(this));
         this.pageStyle.mount(this.divElement);
         this.useSelectElementPolyfill = new InputComponent("useSelectElementPolyfill", "checkbox", "Use Custom Dropdown Implementation", {
-            checked: (_p = settings === null || settings === void 0 ? void 0 : settings.useSelectElementPolyfill) !== null && _p !== void 0 ? _p : defaultSettings_.useSelectElementPolyfill
+            checked: (_q = settings === null || settings === void 0 ? void 0 : settings.useSelectElementPolyfill) !== null && _q !== void 0 ? _q : defaultSettings_.useSelectElementPolyfill
         });
         this.useSelectElementPolyfill.addChangeListener(this.onSettingsChange.bind(this));
         this.useSelectElementPolyfill.mount(this.divElement);
         this.onSettingsChange();
     }
     onSettingsChange() {
-        if (this.videoSize.getValue() == "custom") {
+        const presetId = this.videoSize.getValue();
+        if (presetId === "custom") {
             this.videoSizeWidth.setEnabled(true);
             this.videoSizeHeight.setEnabled(true);
         }
         else {
             this.videoSizeWidth.setEnabled(false);
             this.videoSizeHeight.setEnabled(false);
+            const preset = VIDEO_PRESETS.find(p => p.id === presetId);
+            if ((preset === null || preset === void 0 ? void 0 : preset.width) != null && (preset === null || preset === void 0 ? void 0 : preset.height) != null) {
+                this.videoSizeWidth.setValue(preset.width.toString());
+                this.videoSizeHeight.setValue(preset.height.toString());
+            }
         }
         this.divElement.dispatchEvent(new ComponentEvent("ml-settingschange", this));
     }
@@ -280,11 +295,24 @@ export class StreamSettingsComponent {
         settings.bitrate = parseInt(this.bitrate.getValue());
         settings.packetSize = parseInt(this.packetSize.getValue());
         settings.fps = parseInt(this.fps.getValue());
-        settings.videoSize = this.videoSize.getValue();
-        settings.videoSizeCustom = {
-            width: parseInt(this.videoSizeWidth.getValue()),
-            height: parseInt(this.videoSizeHeight.getValue())
-        };
+        const presetId = this.videoSize.getValue();
+        if (presetId === "custom") {
+            settings.videoSize = "custom";
+            settings.videoSizeCustom = {
+                width: parseInt(this.videoSizeWidth.getValue()),
+                height: parseInt(this.videoSizeHeight.getValue()),
+            };
+        }
+        else {
+            settings.videoSize = presetId;
+            const preset = VIDEO_PRESETS.find(p => p.id === presetId);
+            if ((preset === null || preset === void 0 ? void 0 : preset.width) != null && (preset === null || preset === void 0 ? void 0 : preset.height) != null) {
+                settings.videoSizeCustom = { width: preset.width, height: preset.height };
+            }
+            else {
+                settings.videoSizeCustom = defaultSettings().videoSizeCustom;
+            }
+        }
         settings.videoFrameQueueSize = parseInt(this.videoSampleQueueSize.getValue());
         settings.videoCodec = this.videoCodec.getValue();
         settings.forceVideoElementRenderer = this.forceVideoElementRenderer.isChecked();
