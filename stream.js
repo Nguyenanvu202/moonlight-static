@@ -617,13 +617,10 @@ class ConnectionInfoModal {
 }
 /** Modal that shows the Moonlight streaming settings panel (bitrate, fps, video size, etc.). */
 const SETTINGS_NAV_LABELS = [
-    "Per-app settings file",
-    "Connection Speed Test",
-    "Sidebar",
     "Video",
+    "Sidebar",
     "Audio",
-    "Mouse",
-    "Controller",
+    "Controls",
     "Other",
 ];
 class SettingsPanelModal {
@@ -658,13 +655,13 @@ class SettingsPanelModal {
             setSettingsForApp(this.app.getAppId(), s);
             setPageStyle(s.pageStyle);
         });
-        // Body: sidebar + content area with 8 panels
+        // Body: sidebar + content area with 5 panels (Video includes speed test)
         const body = document.createElement("div");
         body.classList.add("settings-body");
         const sidebar = document.createElement("nav");
         sidebar.classList.add("settings-sidebar");
         this.panels = [];
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 5; i++) {
             const panel = document.createElement("div");
             panel.classList.add("settings-panel");
             panel.setAttribute("data-panel", String(i));
@@ -674,6 +671,16 @@ class SettingsPanelModal {
             const navItem = document.createElement("button");
             navItem.type = "button";
             navItem.classList.add("settings-nav-item");
+            if (i === 0)
+                navItem.classList.add("settings-nav-item-video");
+            if (i === 1)
+                navItem.classList.add("settings-nav-item-sidebar");
+            if (i === 2)
+                navItem.classList.add("settings-nav-item-audio");
+            if (i === 3)
+                navItem.classList.add("settings-nav-item-controls");
+            if (i === 4)
+                navItem.classList.add("settings-nav-item-other");
             navItem.setAttribute("data-panel", String(i));
             navItem.innerText = SETTINGS_NAV_LABELS[i];
             if (i === 0)
@@ -682,42 +689,7 @@ class SettingsPanelModal {
             sidebar.appendChild(navItem);
         }
         this.content.classList.add("modal-settings-panel-content", "settings-content");
-        // Panel 0: Per-app settings file
-        const fileSection = document.createElement("div");
-        fileSection.classList.add("settings-panel-inner");
-        const fileTitle = document.createElement("h3");
-        fileTitle.classList.add("settings-section-title");
-        fileTitle.innerText = "Per-app settings file";
-        fileSection.appendChild(fileTitle);
-        const exportBtn = document.createElement("button");
-        exportBtn.innerText = "Export app_settings.json";
-        exportBtn.addEventListener("click", () => exportAppSettingsToFile());
-        fileSection.appendChild(exportBtn);
-        const importBtn = document.createElement("button");
-        importBtn.innerText = "Import from file";
-        const importInput = document.createElement("input");
-        importInput.type = "file";
-        importInput.accept = "application/json,.json";
-        importInput.style.display = "none";
-        importInput.addEventListener("change", () => {
-            var _a;
-            const file = (_a = importInput.files) === null || _a === void 0 ? void 0 : _a[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = () => {
-                    const text = reader.result;
-                    if (text)
-                        importAppSettingsFromJson(text);
-                    importInput.value = "";
-                };
-                reader.readAsText(file);
-            }
-        });
-        importBtn.addEventListener("click", () => importInput.click());
-        fileSection.appendChild(importBtn);
-        fileSection.appendChild(importInput);
-        this.panels[0].appendChild(fileSection);
-        // Panel 1: Connection Speed Test
+        // Speed test (integrated into Video panel)
         const speedtestContainer = document.createElement("div");
         speedtestContainer.classList.add("settings-panel-inner");
         const speedtestTitle = document.createElement("h3");
@@ -829,12 +801,17 @@ class SettingsPanelModal {
                 speedtestButton.disabled = false;
             }
         }));
-        this.panels[1].appendChild(speedtestContainer);
-        // Panels 2–7: move the 6 .settings-section divs from the component into panels
+        // Panel 0: Video (speed test + video settings)
         const sectionDivs = this.settingsComponent.divElement.querySelectorAll(".settings-section");
-        for (let i = 0; i < sectionDivs.length; i++)
-            this.panels[i + 2].appendChild(sectionDivs[i]);
-        for (let i = 0; i < 8; i++)
+        this.panels[0].appendChild(speedtestContainer);
+        this.panels[0].appendChild(sectionDivs[1]);
+        // Panels 1–4: sidebar, audio, controls (mouse+controller), other
+        this.panels[1].appendChild(sectionDivs[0]);
+        this.panels[2].appendChild(sectionDivs[2]);
+        this.panels[3].appendChild(sectionDivs[3]);
+        this.panels[3].appendChild(sectionDivs[4]);
+        this.panels[4].appendChild(sectionDivs[5]);
+        for (let i = 0; i < 5; i++)
             this.content.appendChild(this.panels[i]);
         body.appendChild(sidebar);
         body.appendChild(this.content);

@@ -173,23 +173,24 @@ button:active {
     height: fit-content;
 }
 
-/* Toggle / accent button (sidebar toggle, etc.) — accent only from palette */
+/* Sidebar toggle: logo only, no background/border */
 .sidebar-button {
-    background-color: #003d7a;
-    border: 1px solid #00d4ff;
-    color: white;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    box-shadow: none;
 }
 
 .sidebar-button:hover {
-    background-color: #252525;
-    border-color: #00d4ff;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 .sidebar-button:active {
-    background-color: #003d7a;
-    border-color: #00d4ff;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 /* All button-like controls — same soft shadow */
@@ -198,7 +199,6 @@ button,
 .logout-button,
 .login-button,
 .admin-button,
-.sidebar-button,
 .user-button {
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
@@ -433,6 +433,8 @@ input[type=number] {
     color: #ffffff;
     width: 96%;
     max-width: 1200px;
+    height: 85vh;
+    min-height: 520px;
     max-height: 90vh;
     overflow: hidden;
     display: flex;
@@ -441,19 +443,19 @@ input[type=number] {
 
 /* ——— Moonlight Settings Modal: dark desktop premium panel ——— */
 
-/* 1. Main window / modal */
+/* 1. Main window / modal — fixed size so it doesn't jump when switching tabs */
 .modal-settings-panel {
     display: flex;
     flex-direction: column;
     min-height: 0;
     flex: 1;
+    height: 100%;
     background: #111111;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.06);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
     overflow: hidden;
     max-width: 90vw;
-    max-height: 85vh;
 }
 
 .modal-settings-panel-header {
@@ -498,11 +500,12 @@ input[type=number] {
     padding: 16px 10px 20px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 2px;
     box-sizing: border-box;
 }
 
+/* Sidebar item — flat nav rail, no card/box */
 .modal-settings-panel .settings-nav-item {
     display: flex;
     align-items: center;
@@ -511,20 +514,39 @@ input[type=number] {
     padding: 13px 14px 13px 16px;
     min-height: 46px;
     border: none;
+    border-left: 3px solid transparent;
     background: transparent;
     color: #D8D8D8;
     font-size: 13px;
     font-weight: 500;
     text-align: left;
     cursor: pointer;
+    outline: none;
+    box-shadow: none;
     transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
     border-radius: 0 14px 14px 0;
     position: relative;
     box-sizing: border-box;
-    border-left: 3px solid transparent;
 }
 
-/* Icon placeholder (minimal line icon) — CSS-only */
+.modal-settings-panel .settings-nav-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #FFFFFF;
+    border: none;
+    border-left: 3px solid transparent;
+    box-shadow: none;
+}
+
+.modal-settings-panel .settings-nav-item.active {
+    background: rgba(255, 255, 255, 0.10);
+    color: #FFFFFF;
+    border: none;
+    border-left: 3px solid #3FA9F5;
+    box-shadow: none;
+    padding-left: 13px;
+}
+
+/* Icon + label alignment */
 .modal-settings-panel .settings-nav-item::before {
     content: '';
     width: 20px;
@@ -536,22 +558,47 @@ input[type=number] {
     opacity: 0.9;
 }
 
-.modal-settings-panel .settings-nav-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: #FFFFFF;
+/* Video tab: use video.svg icon */
+.modal-settings-panel .settings-nav-item-video::before {
+    background: url("../resources/video.svg") no-repeat center;
+    background-size: 20px 20px;
+    opacity: 0.9;
+    filter: brightness(0) invert(1);
 }
 
-.modal-settings-panel .settings-nav-item:hover::before {
-    opacity: 1;
+/* Sidebar tab: use panel-left-right-dashed.svg icon */
+.modal-settings-panel .settings-nav-item-sidebar::before {
+    background: url("../resources/panel-left-right-dashed.svg") no-repeat center;
+    background-size: 20px 20px;
+    opacity: 0.9;
+    filter: brightness(0) invert(1);
 }
 
-.modal-settings-panel .settings-nav-item.active {
-    background: rgba(255, 255, 255, 0.10);
-    color: #FFFFFF;
-    border-left-color: #3FA9F5;
-    padding-left: 13px;
+/* Audio tab: use volume-2.svg icon */
+.modal-settings-panel .settings-nav-item-audio::before {
+    background: url("../resources/volume-2.svg") no-repeat center;
+    background-size: 20px 20px;
+    opacity: 0.9;
+    filter: brightness(0) invert(1);
 }
 
+/* Controls tab: use chevrons-right-left.svg icon */
+.modal-settings-panel .settings-nav-item-controls::before {
+    background: url("../resources/chevrons-right-left.svg") no-repeat center;
+    background-size: 20px 20px;
+    opacity: 0.9;
+    filter: brightness(0) invert(1);
+}
+
+/* Other tab: use settings-gear.svg icon */
+.modal-settings-panel .settings-nav-item-other::before {
+    background: url("../resources/settings-gear.svg") no-repeat center;
+    background-size: 20px 20px;
+    opacity: 0.9;
+    filter: brightness(0) invert(1);
+}
+
+.modal-settings-panel .settings-nav-item:hover::before,
 .modal-settings-panel .settings-nav-item.active::before {
     opacity: 1;
 }
@@ -642,6 +689,116 @@ input[type=number] {
     font-size: 14px;
     font-weight: 500;
     color: #C8C8C8;
+}
+
+/* Video section card icons: Bitrate, Packet Size, Fps, Video Width, Video Height */
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(2)::before {
+    background: url("../resources/arrow-up-down.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(3)::before {
+    background: url("../resources/package.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(4)::before {
+    background: url("../resources/zap.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(6)::before {
+    background: url("../resources/monitor-check.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(7)::before {
+    background: url("../resources/monitor-up.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(8)::before {
+    background: url("../resources/layers-plus.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(10)::before {
+    background: url("../resources/monitor-dot.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(11)::before {
+    background: url("../resources/palette.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(12)::before {
+    background: url("../resources/refresh-cw.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="video"] > .input-div:nth-child(13)::before {
+    background: url("../resources/sun-medium.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+
+/* Audio section card icons */
+.modal-settings-panel .settings-section[data-section="audio"] > .input-div:nth-child(2)::before {
+    background: url("../resources/monitor-speaker.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="audio"] > .input-div:nth-child(3)::before {
+    background: url("../resources/play.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+
+/* Controller section card icons */
+.modal-settings-panel .settings-section[data-section="controller"] > .input-div:nth-child(2)::before {
+    background: url("../resources/refresh-ccw.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="controller"] > .input-div:nth-child(3)::before {
+    background: url("../resources/refresh-cw.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="controller"] > .input-div:nth-child(4)::before {
+    background: url("../resources/timer.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+
+/* Other section card icons */
+.modal-settings-panel .settings-section[data-section="other"] > .input-div:nth-child(3)::before {
+    background: url("../resources/monitor.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
+}
+.modal-settings-panel .settings-section[data-section="other"] > .input-div:nth-child(5)::before {
+    background: url("../resources/chevron-down.svg") no-repeat center;
+    background-size: 20px 20px;
+    filter: brightness(0) invert(1);
+    opacity: 0.85;
 }
 
 .modal-settings-panel .settings-section > .input-div > input[type="number"],
@@ -861,7 +1018,7 @@ input[type=number] {
 .sidebar-background {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 0;
     /** animation */
     transition: all 0.2s 0s linear;
 }
@@ -877,7 +1034,7 @@ input[type=number] {
 
 .sidebar-edge-left .sidebar-background {
     flex-direction: row-reverse;
-    transform: translate(calc(-100% + 40px), -50%);
+    transform: translate(calc(-100% + 48px), -50%);
 }
 
 .sidebar-overlay.sidebar-edge-right {
@@ -887,7 +1044,7 @@ input[type=number] {
 
 .sidebar-edge-right .sidebar-background {
     flex-direction: row;
-    transform: translate(calc(100% - 40px), -50%);
+    transform: translate(calc(100% - 48px), -50%);
 }
 
 .sidebar-edge-left.sidebar-show .sidebar-background,
@@ -902,7 +1059,7 @@ input[type=number] {
 
 .sidebar-edge-up .sidebar-background {
     flex-direction: column-reverse;
-    transform: translate(-50%, calc(-100% + 40px));
+    transform: translate(-50%, calc(-100% + 48px));
 }
 
 .sidebar-overlay.sidebar-edge-down {
@@ -912,7 +1069,7 @@ input[type=number] {
 
 .sidebar-edge-down .sidebar-background {
     flex-direction: column;
-    transform: translate(-50%, calc(100% - 40px));
+    transform: translate(-50%, calc(100% - 48px));
 }
 
 .sidebar-edge-down.sidebar-show .sidebar-background,
@@ -921,36 +1078,22 @@ input[type=number] {
 }
 
 .sidebar-button {
-    /** Note: Button full size: 30px(width / height) + 5px(padding as in button selector) + 5px(.sidebar-background gap) = 40px */
-    width: 30px;
-    height: 30px;
+    /** Button size matches logo (48px), gap 0 = 48px when collapsed */
+    width: 48px;
+    height: 48px;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .sidebar-button-image {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    mix-blend-mode: lighten;
     transition: all 0.3s linear;
-}
-
-.sidebar-edge-left .sidebar-button-image {
-    rotate: 180deg;
-}
-
-.sidebar-edge-right .sidebar-button-image {
-    rotate: 0deg;
-}
-
-.sidebar-edge-up .sidebar-button-image {
-    rotate: 270deg;
-}
-
-.sidebar-edge-down .sidebar-button-image {
-    rotate: 90deg;
-}
-
-.sidebar-show .sidebar-button-image {
-    transform: rotate(180deg);
 }
 
 
@@ -1092,8 +1235,8 @@ input[type=number] {
 }
 
 .theme-toggle {
-    width: 50px;
-    height: 50px;
+    width: 48px;
+    height: 48px;
     padding: var(--space-xs);
     background: rgba(0, 212, 255, 0.1);
     border: 2px solid rgba(0, 212, 255, 0.3);
@@ -1120,7 +1263,7 @@ input[type=number] {
 
 /** Search/Filter */
 .host-search {
-    width: 250px;
+    width: 248px;
     padding: var(--space-sm) var(--space-md);
     background: rgba(0, 30, 50, 0.7);
     border: 2px solid rgba(0, 212, 255, 0.3);
@@ -1389,7 +1532,7 @@ input[type=number] {
     flex-direction: column;
     align-items: center;
     position: relative;
-    min-width: 150px;
+    min-width: 148px;
 }
 
 .host-element:hover {
