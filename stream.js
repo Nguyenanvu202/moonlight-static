@@ -616,6 +616,16 @@ class ConnectionInfoModal {
     }
 }
 /** Modal that shows the Moonlight streaming settings panel (bitrate, fps, video size, etc.). */
+const SETTINGS_NAV_LABELS = [
+    "Per-app settings file",
+    "Connection Speed Test",
+    "Sidebar",
+    "Video",
+    "Audio",
+    "Mouse",
+    "Controller",
+    "Other",
+];
 class SettingsPanelModal {
     constructor(app) {
         var _a;
@@ -635,11 +645,12 @@ class SettingsPanelModal {
         closeButton.innerText = "Close";
         closeButton.addEventListener("click", () => this.resolve(null));
         header.appendChild(title);
-        header.appendChild(applyButton);
-        header.appendChild(closeButton);
+        const headerActions = document.createElement("div");
+        headerActions.classList.add("modal-settings-panel-header-actions");
+        headerActions.appendChild(applyButton);
+        headerActions.appendChild(closeButton);
+        header.appendChild(headerActions);
         this.wrapper.appendChild(header);
-        this.content.classList.add("modal-settings-panel-content");
-        this.wrapper.appendChild(this.content);
         // Stream settings UI (per-app)
         this.settingsComponent = new StreamSettingsComponent((_a = getSettingsForApp(this.app.getAppId())) !== null && _a !== void 0 ? _a : undefined);
         this.settingsComponent.addChangeListener(() => {
@@ -647,15 +658,39 @@ class SettingsPanelModal {
             setSettingsForApp(this.app.getAppId(), s);
             setPageStyle(s.pageStyle);
         });
-        // Export / Import app_settings.json
+        // Body: sidebar + content area with 8 panels
+        const body = document.createElement("div");
+        body.classList.add("settings-body");
+        const sidebar = document.createElement("nav");
+        sidebar.classList.add("settings-sidebar");
+        this.panels = [];
+        for (let i = 0; i < 8; i++) {
+            const panel = document.createElement("div");
+            panel.classList.add("settings-panel");
+            panel.setAttribute("data-panel", String(i));
+            if (i !== 0)
+                panel.classList.add("settings-panel-hidden");
+            this.panels.push(panel);
+            const navItem = document.createElement("button");
+            navItem.type = "button";
+            navItem.classList.add("settings-nav-item");
+            navItem.setAttribute("data-panel", String(i));
+            navItem.innerText = SETTINGS_NAV_LABELS[i];
+            if (i === 0)
+                navItem.classList.add("active");
+            navItem.addEventListener("click", () => this.showPanel(i));
+            sidebar.appendChild(navItem);
+        }
+        this.content.classList.add("modal-settings-panel-content", "settings-content");
+        // Panel 0: Per-app settings file
         const fileSection = document.createElement("div");
-        fileSection.style.marginTop = "1rem";
+        fileSection.classList.add("settings-panel-inner");
         const fileTitle = document.createElement("h3");
+        fileTitle.classList.add("settings-section-title");
         fileTitle.innerText = "Per-app settings file";
         fileSection.appendChild(fileTitle);
         const exportBtn = document.createElement("button");
         exportBtn.innerText = "Export app_settings.json";
-        exportBtn.style.marginRight = "0.5rem";
         exportBtn.addEventListener("click", () => exportAppSettingsToFile());
         fileSection.appendChild(exportBtn);
         const importBtn = document.createElement("button");
@@ -681,11 +716,12 @@ class SettingsPanelModal {
         importBtn.addEventListener("click", () => importInput.click());
         fileSection.appendChild(importBtn);
         fileSection.appendChild(importInput);
-        this.content.appendChild(fileSection);
-        // Cloudflare Speedtest section
+        this.panels[0].appendChild(fileSection);
+        // Panel 1: Connection Speed Test
         const speedtestContainer = document.createElement("div");
-        speedtestContainer.style.marginTop = "1rem";
+        speedtestContainer.classList.add("settings-panel-inner");
         const speedtestTitle = document.createElement("h3");
+        speedtestTitle.classList.add("settings-section-title");
         speedtestTitle.innerText = "Connection Speed Test";
         speedtestContainer.appendChild(speedtestTitle);
         const speedtestButton = document.createElement("button");
@@ -693,8 +729,7 @@ class SettingsPanelModal {
         speedtestContainer.appendChild(speedtestButton);
         const speedtestResult = document.createElement("div");
         speedtestResult.innerText = "Speed test not run yet.";
-        speedtestResult.style.whiteSpace = "pre-line";
-        speedtestResult.style.marginTop = "0.5rem";
+        speedtestResult.classList.add("settings-speedtest-result");
         speedtestContainer.appendChild(speedtestResult);
         speedtestButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
             var _a, _b;
@@ -794,7 +829,28 @@ class SettingsPanelModal {
                 speedtestButton.disabled = false;
             }
         }));
-        this.content.appendChild(speedtestContainer);
+        this.panels[1].appendChild(speedtestContainer);
+        // Panels 2–7: move the 6 .settings-section divs from the component into panels
+        const sectionDivs = this.settingsComponent.divElement.querySelectorAll(".settings-section");
+        for (let i = 0; i < sectionDivs.length; i++)
+            this.panels[i + 2].appendChild(sectionDivs[i]);
+        for (let i = 0; i < 8; i++)
+            this.content.appendChild(this.panels[i]);
+        body.appendChild(sidebar);
+        body.appendChild(this.content);
+        this.wrapper.appendChild(body);
+        // Event target must stay in DOM (hidden) for component events
+        this.settingsComponent.divElement.classList.add("settings-event-target");
+        this.settingsComponent.divElement.setAttribute("aria-hidden", "true");
+        this.wrapper.appendChild(this.settingsComponent.divElement);
+    }
+    showPanel(index) {
+        this.panels.forEach((panel, i) => {
+            panel.classList.toggle("settings-panel-hidden", i !== index);
+        });
+        this.wrapper.querySelectorAll(".settings-nav-item").forEach((item, i) => {
+            item.classList.toggle("active", i === index);
+        });
     }
     onApply() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -807,10 +863,8 @@ class SettingsPanelModal {
     }
     mount(parent) {
         parent.appendChild(this.wrapper);
-        this.settingsComponent.mount(this.content);
     }
     unmount(parent) {
-        this.settingsComponent.unmount(this.content);
         parent.removeChild(this.wrapper);
     }
     onFinish(signal) {
