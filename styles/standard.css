@@ -89,6 +89,14 @@ body.stream {
     overscroll-behavior: none !important;
 }
 
+/* Stream page theme: from-black, via-purple-900/20, to-black */
+body.stream {
+    background: linear-gradient(180deg, #000000 0%, rgba(88, 28, 135, 0.2) 50%, #000000 100%);
+}
+body.stream::before {
+    background: linear-gradient(180deg, #000000 0%, rgba(88, 28, 135, 0.2) 50%, #000000 100%);
+}
+
 .root:not(input) {
     -webkit-touch-callout: none;
     -webkit-user-drag: none;
@@ -175,24 +183,23 @@ button,
 
 /** Checkbox */
 input[type="checkbox"] {
-    /* remove native box */
     appearance: none;
     vertical-align: middle;
     width: 24px;
     height: 24px;
-    border: 2px solid #00d4ff;
+    border: 2px solid rgba(0, 0, 0, 0);
     border-radius: 6px;
     cursor: pointer;
     position: relative;
     display: inline-block;
-    background: rgba(0, 30, 50, 0.8);
+    background: rgba(0, 0, 0, 0.075);
     transition: all 0.3s ease;
-    box-shadow: 0 0 10px rgba(0, 212, 255, 0.3) inset;
+    box-shadow: 0 0 10px rgb(0 0 0 / 10%) inset;
 }
 
 input[type="checkbox"]:hover {
-    border-color: #00ffff;
-    box-shadow: 0 0 15px rgba(0, 212, 255, 0.5) inset;
+    border-color: #0000002b;
+    box-shadow: 0 0 15px #d0d0d0 inset;
 }
 
 input[type="checkbox"]::after {
@@ -209,10 +216,9 @@ input[type="checkbox"]::after {
 }
 
 input[type="checkbox"]:checked {
-    /* box fill */
-    background: linear-gradient(135deg, #00a3cc 0%, #0080b3 100%);
-    border-color: #00ffff;
-    box-shadow: 0 0 15px rgba(0, 212, 255, 0.6), 0 0 20px rgba(0, 255, 255, 0.4);
+    background: linear-gradient(135deg, #b3b3b300 0%, #9f9f9f 100%);
+    border-color: #898181;
+    box-shadow: 0 0 15px rgb(150 154 155 / 16%), 0 0 20px #a6a6a659;
 }
 
 input[type="checkbox"]:checked::after {
@@ -280,8 +286,8 @@ input[type=password]:hover:enabled,
 input[type="number"]:hover:enabled {
     transition: all 0.3s ease;
     background-color: rgba(0, 50, 80, 0.9);
-    border-color: #00ffff;
-    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3) inset;
+    border-color: #ffffff;
+    box-shadow: 0 0 20px #ffffff1a inset;
 }
 
 textarea:disabled,
@@ -298,8 +304,8 @@ input[type=range]:disabled {
 }
 
 select option {
-    background-color: #001a2e;
-    color: #00f5ff;
+    background-color: rgb(0 0 0 / 0%);
+    color: #ffffff;
 }
 
 /** Hide the number up down thingy on number inputs */
@@ -601,15 +607,73 @@ input[type=number] {
 }
 
 
-.sidebar-content {
-    background: linear-gradient(135deg, rgba(0, 30, 50, 0.95) 0%, rgba(0, 15, 30, 0.95) 100%);
+.sidebar-content,
+#sidebar-parent.sidebar-content {
+    background: #000000c2;
     backdrop-filter: blur(15px);
     border-radius: 12px;
     padding: 10px 10px 10px 10px;
     display: flex;
     flex-direction: column;
-    border: 2px solid #00a3cc;
-    box-shadow: 0 0 25px rgba(0, 212, 255, 0.3), 0 0 50px rgba(0, 212, 255, 0.15);
+    border: 1px solid #444;
+    box-shadow: 0 4px 20px rgb(0 0 0 / 0%);
+}
+
+/** Stream sidebar: buttons, dropdowns, toggle - dark panel style */
+.sidebar-stream .sidebar-stream-buttons button {
+    background-color: #1A1A1A;
+    color: #E8E8E8;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin: 4px;
+    min-height: 42px;
+    font-size: 1rem;
+    overflow: hidden;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.sidebar-stream .sidebar-stream-buttons button:hover {
+    background-color: #252525;
+    border-color: rgba(255, 255, 255, 0.35);
+}
+.sidebar-stream select,
+.sidebar-stream .select-polyfill-display {
+    background-color: #1A1A1A !important;
+    color: #E8E8E8 !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    border-radius: 10px !important;
+    padding: 10px 16px;
+    margin: 5px;
+    min-height: 42px;
+    box-sizing: border-box;
+    text-align: center;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.075) inset;
+}
+.sidebar-stream select:hover,
+.sidebar-stream .select-polyfill-display:hover {
+    background-color: #252525 !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
+}
+.sidebar-stream input[type="checkbox"] {
+    border: 1px solid #CCCCCC;
+    border-radius: 50%;
+    background-color: #404040;
+}
+.sidebar-stream input[type="checkbox"]:checked {
+    background-color: #555;
+    border-color: #E0E0E0;
+}
+.sidebar-stream label {
+    color: #FFFFFF;
+}
+.sidebar-stream .select-polyfill-list {
+    background-color: #333333;
+    border: 1px solid #CCCCCC;
+    border-radius: 8px;
+}
+.sidebar-stream .select-polyfill-list p:hover {
+    background-color: #3C3C3C;
 }
 
 /** Errors */
@@ -1244,7 +1308,6 @@ input[type=number] {
     min-height: 100vmin;
     width: auto;
     height: auto;
-    outline: none;
 }
 
 canvas.video-stream {
