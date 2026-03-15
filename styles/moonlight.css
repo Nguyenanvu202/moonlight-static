@@ -373,7 +373,7 @@ input[type=number] {
 .sidebar-background {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 0;
     /** animation */
     transition: all 0.2s 0s linear;
 }
@@ -389,7 +389,7 @@ input[type=number] {
 
 .sidebar-edge-left .sidebar-background {
     flex-direction: row-reverse;
-    transform: translate(calc(-100% + 40px), -50%);
+    transform: translate(calc(-100% + 48px), -50%);
 }
 
 .sidebar-overlay.sidebar-edge-right {
@@ -399,7 +399,7 @@ input[type=number] {
 
 .sidebar-edge-right .sidebar-background {
     flex-direction: row;
-    transform: translate(calc(100% - 40px), -50%);
+    transform: translate(calc(100% - 48px), -50%);
 }
 
 .sidebar-edge-left.sidebar-show .sidebar-background,
@@ -414,7 +414,7 @@ input[type=number] {
 
 .sidebar-edge-up .sidebar-background {
     flex-direction: column-reverse;
-    transform: translate(-50%, calc(-100% + 40px));
+    transform: translate(-50%, calc(-100% + 48px));
 }
 
 .sidebar-overlay.sidebar-edge-down {
@@ -424,7 +424,7 @@ input[type=number] {
 
 .sidebar-edge-down .sidebar-background {
     flex-direction: column;
-    transform: translate(-50%, calc(100% - 40px));
+    transform: translate(-50%, calc(100% - 48px));
 }
 
 .sidebar-edge-down.sidebar-show .sidebar-background,
@@ -433,36 +433,22 @@ input[type=number] {
 }
 
 .sidebar-button {
-    /** Note: Button full size: 30px(width / height) + 5px(padding as in button selector) + 5px(.sidebar-background gap) = 40px */
-    width: 30px;
-    height: 30px;
+    /** Button size matches logo (48px), gap 0 = 48px when collapsed */
+    width: 48px;
+    height: 48px;
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
 }
 
 .sidebar-button-image {
+    display: block;
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    mix-blend-mode: lighten;
     transition: all 0.3s linear;
-}
-
-.sidebar-edge-left .sidebar-button-image {
-    rotate: 180deg;
-}
-
-.sidebar-edge-right .sidebar-button-image {
-    rotate: 0deg;
-}
-
-.sidebar-edge-up .sidebar-button-image {
-    rotate: 270deg;
-}
-
-.sidebar-edge-down .sidebar-button-image {
-    rotate: 90deg;
-}
-
-.sidebar-show .sidebar-button-image {
-    transform: rotate(180deg);
 }
 
 
