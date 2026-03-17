@@ -16,15 +16,26 @@ export function setSidebarStyle(style) {
 export function toggleSidebar() {
     setSidebarExtended(!isSidebarExtended());
 }
+let outsideClickHandler = null;
 export function setSidebarExtended(extended) {
     if (extended == sidebarExtended) {
         return;
     }
     if (extended) {
         sidebarRoot === null || sidebarRoot === void 0 ? void 0 : sidebarRoot.classList.add("sidebar-show");
+        outsideClickHandler = (e) => {
+            if (sidebarRoot && !sidebarRoot.contains(e.target)) {
+                setSidebarExtended(false);
+            }
+        };
+        setTimeout(() => document.addEventListener("mousedown", outsideClickHandler, true), 0);
     }
     else {
         sidebarRoot === null || sidebarRoot === void 0 ? void 0 : sidebarRoot.classList.remove("sidebar-show");
+        if (outsideClickHandler) {
+            document.removeEventListener("mousedown", outsideClickHandler, true);
+            outsideClickHandler = null;
+        }
     }
     sidebarExtended = extended;
 }
