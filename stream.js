@@ -75,6 +75,12 @@ class ViewerApp {
         this.inputConfig = defaultStreamInputConfig();
         this.hasShownFullscreenEscapeWarning = false;
         this.isTogglingFullscreenWithKeybind = "none";
+        this.fullscreenExitCircle = null;
+        this.fullscreenExitEscAnimationFrame = null;
+        this.fullscreenExitEscActive = false;
+        this.fullscreenExitCircleLogo = null;
+        this.fullscreenExitEscAnimationFrame = null;
+        this.fullscreenExitCircleCircumference = 0;
         this.api = api;
         this.hostId = hostId;
         this.appId = appId;
@@ -98,6 +104,7 @@ class ViewerApp {
             }
         }, 100);
         this.div.appendChild(this.statsDiv);
+        this.createFullscreenExitCircle();
         // Configure stream (per-app: from localStorage or app_settings.json)
         const settings = getSettingsForApp(appId);
         let browserWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
@@ -239,6 +246,9 @@ class ViewerApp {
         var _a;
         this.onUserInteraction();
         console.debug(event);
+        if (event.code === "Escape" && this.isFullscreen()) {
+            this.startFullscreenExitEscHold();
+        }
         if (event.shiftKey && event.ctrlKey && event.code == "KeyV") {
             // We are likely pasting -> don't send keys
         }
@@ -255,6 +265,9 @@ class ViewerApp {
         var _a;
         this.onUserInteraction();
         event.preventDefault();
+        if (event.code === "Escape") {
+            this.cancelFullscreenExitEscHold();
+        }
         (_a = this.stream) === null || _a === void 0 ? void 0 : _a.getInput().onKeyUp(event);
         event.stopPropagation();
         if (this.toggleFullscreenWithKeybind && this.isTogglingFullscreenWithKeybind == "none" && event.ctrlKey && event.shiftKey && event.code == "KeyI") {
@@ -363,6 +376,149 @@ class ViewerApp {
         window.requestAnimationFrame(this.onGamepadUpdate.bind(this));
     }
     // Fullscreen
+    createFullscreenExitCircle() {
+        const body = document.body;
+        if (!body) return;
+    
+        const SIZE = 64;
+        const RADIUS = 28;
+        const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+    
+        const wrapper = document.createElement("div");
+        wrapper.style.position = "fixed";
+        wrapper.style.top = "12px";
+        wrapper.style.right = "12px";
+        wrapper.style.width = `${SIZE}px`;
+        wrapper.style.height = `${SIZE}px`;
+        wrapper.style.zIndex = "10000";
+        wrapper.style.display = "none";
+        wrapper.style.cursor = "default";
+    
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", `0 0 ${SIZE} ${SIZE}`);
+        svg.setAttribute("width", `${SIZE}`);
+        svg.setAttribute("height", `${SIZE}`);
+        svg.style.position = "absolute";
+        svg.style.top = "0";
+        svg.style.left = "0";
+    
+        // Dark background circle
+        const bgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        bgCircle.setAttribute("cx", "32");
+        bgCircle.setAttribute("cy", "32");
+        bgCircle.setAttribute("r", `${RADIUS}`);
+        bgCircle.setAttribute("fill", "rgba(0,0,0,0.5)");
+    
+        // Dim static border
+        const borderCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        borderCircle.setAttribute("cx", "32");
+        borderCircle.setAttribute("cy", "32");
+        borderCircle.setAttribute("r", `${RADIUS}`);
+        borderCircle.setAttribute("fill", "none");
+        borderCircle.setAttribute("stroke", "rgba(255,255,255,0.2)");
+        borderCircle.setAttribute("stroke-width", "3");
+    
+        // Animated arc
+        const arc = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        arc.setAttribute("cx", "32");
+        arc.setAttribute("cy", "32");
+        arc.setAttribute("r", `${RADIUS}`);
+        arc.setAttribute("fill", "none");
+        arc.setAttribute("stroke", "rgba(255,255,255,0.9)");
+        arc.setAttribute("stroke-width", "3");
+        arc.setAttribute("stroke-dasharray", `${CIRCUMFERENCE}`);
+        arc.setAttribute("stroke-dashoffset", `${CIRCUMFERENCE}`);
+        arc.setAttribute("stroke-linecap", "round");
+        arc.setAttribute("transform", "rotate(-90 32 32)");
+    
+        svg.appendChild(bgCircle);
+        svg.appendChild(borderCircle);
+        svg.appendChild(arc);
+    
+        // Logo image centered inside
+        const logoImg = document.createElement("img");
+        logoImg.src = "./resources/sidebar-button-icon.png";
+        logoImg.alt = "Moonlight";
+        logoImg.style.position = "absolute";
+        logoImg.style.top = "50%";
+        logoImg.style.left = "50%";
+        logoImg.style.width = "36px";
+        logoImg.style.height = "36px";
+        logoImg.style.transform = "translate(-50%, -50%)";
+        logoImg.style.pointerEvents = "none";
+        logoImg.style.transition = "opacity 0.1s ease";
+    
+        wrapper.appendChild(svg);
+        wrapper.appendChild(logoImg);
+        body.appendChild(wrapper);
+    
+        this.fullscreenExitCircle = wrapper;
+        this.fullscreenExitCircleArc = arc;
+        this.fullscreenExitCircleCircumference = CIRCUMFERENCE;
+        this.fullscreenExitCircleLogo = logoImg;
+    }
+    startFullscreenExitEscHold() {
+        if (!this.fullscreenExitCircle || this.fullscreenExitEscActive || !this.isFullscreen()) return;
+    
+        this.fullscreenExitEscActive = true;
+        this.fullscreenExitCircle.style.display = "block";
+    
+        const arc = this.fullscreenExitCircleArc;
+        const logo = this.fullscreenExitCircleLogo;
+        const circumference = this.fullscreenExitCircleCircumference;
+        const duration = 750;
+        const start = performance.now();
+    
+        // Flicker animation using setInterval
+        let flickerVisible = true;
+        const flickerInterval = setInterval(() => {
+            if (!this.fullscreenExitEscActive) {
+                clearInterval(flickerInterval);
+                if (logo) logo.style.opacity = "1";
+                return;
+            }
+            flickerVisible = !flickerVisible;
+            if (logo) logo.style.opacity = flickerVisible ? "1" : "0.15";
+        }, 80);
+    
+        const animate = (now) => {
+            if (!this.fullscreenExitEscActive || !this.isFullscreen()) {
+                clearInterval(flickerInterval);
+                this.fullscreenExitCircle.style.display = "none";
+                arc.setAttribute("stroke-dashoffset", `${circumference}`);
+                if (logo) logo.style.opacity = "1";
+                return;
+            }
+            const t = Math.min(1, (now - start) / duration);
+            arc.setAttribute("stroke-dashoffset", `${circumference * (1 - t)}`);
+    
+            if (t < 1) {
+                this.fullscreenExitEscAnimationFrame = window.requestAnimationFrame(animate);
+            } else {
+                clearInterval(flickerInterval);
+                this.fullscreenExitEscAnimationFrame = null;
+                this.fullscreenExitEscActive = false;
+                this.fullscreenExitCircle.style.display = "none";
+                arc.setAttribute("stroke-dashoffset", `${circumference}`);
+                if (logo) logo.style.opacity = "1";
+                this.exitPointerLock();
+                this.exitFullscreen();
+            }
+        };
+        this.fullscreenExitEscAnimationFrame = window.requestAnimationFrame(animate);
+    }
+    cancelFullscreenExitEscHold() {
+        if (!this.fullscreenExitCircle) return;
+    
+        this.fullscreenExitEscActive = false;
+        if (this.fullscreenExitEscAnimationFrame != null) {
+            window.cancelAnimationFrame(this.fullscreenExitEscAnimationFrame);
+            this.fullscreenExitEscAnimationFrame = null;
+        }
+        this.fullscreenExitCircle.style.display = "none";
+        this.fullscreenExitCircleArc.setAttribute("stroke-dashoffset", `${this.fullscreenExitCircleCircumference}`);
+        if (this.fullscreenExitCircleLogo) this.fullscreenExitCircleLogo.style.opacity = "1";
+    }
     requestFullscreen() {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
@@ -426,6 +582,9 @@ class ViewerApp {
     onFullscreenChange() {
         return __awaiter(this, void 0, void 0, function* () {
             this.checkFullyImmersed();
+            if (!this.isFullscreen()) {
+                this.cancelFullscreenExitEscHold();
+            }
         });
     }
     // Pointer Lock
