@@ -166,13 +166,17 @@ export class SelectComponent extends ElementWithLabel {
         }
         this.options = options;
         // Create base
-        if (useSelectElementPolyfill() || !isElementSupported("select")) {
+        if ((init === null || init === void 0 ? void 0 : init.forcePolyfill) || useSelectElementPolyfill() || !isElementSupported("select")) {
             const wrapper = document.createElement("div");
             wrapper.classList.add("select-polyfill-wrapper");
             this.div.appendChild(wrapper);
             this.div.classList.add("input-div");
             const display = document.createElement("p");
             display.classList.add("select-polyfill-display");
+            if (init === null || init === void 0 ? void 0 : init.embeddedLabel) {
+                display.dataset.label = init.embeddedLabel;
+                display.classList.add("select-polyfill-display--two-line");
+            }
             display.addEventListener("click", () => {
                 if (this.strategy.name != "polyfill") {
                     throw "SelectComponent strategy is not polyfill";
@@ -181,6 +185,9 @@ export class SelectComponent extends ElementWithLabel {
             });
             const list = document.createElement("div");
             list.classList.add("select-polyfill-list");
+            if (init === null || init === void 0 ? void 0 : init.listClass) {
+                list.classList.add(init.listClass);
+            }
             wrapper.appendChild(display);
             this.strategy = {
                 name: "polyfill",
@@ -189,7 +196,9 @@ export class SelectComponent extends ElementWithLabel {
                 display,
                 list,
                 value: (_a = init === null || init === void 0 ? void 0 : init.preSelectedOption) !== null && _a !== void 0 ? _a : "",
-                disabled: new Set()
+                disabled: new Set(),
+                closedDisplayLabel: (init === null || init === void 0 ? void 0 : init.closedDisplayLabel) || null,
+                forceTop: !!(init === null || init === void 0 ? void 0 : init.forceTop)
             };
         }
         else if (init && init.hasSearch && isElementSupported("datalist")) {
@@ -340,8 +349,13 @@ export class SelectComponent extends ElementWithLabel {
             }
         }
         const value = this.strategy.value;
-        const selectedOption = this.options.find(option => option.value == value);
-        this.strategy.display.innerText = (_a = selectedOption === null || selectedOption === void 0 ? void 0 : selectedOption.name) !== null && _a !== void 0 ? _a : "(Not Selected)";
+        if (this.strategy.closedDisplayLabel) {
+            this.strategy.display.innerText = this.strategy.closedDisplayLabel;
+        }
+        else {
+            const selectedOption = this.options.find(option => option.value == value);
+            this.strategy.display.innerText = (_a = selectedOption === null || selectedOption === void 0 ? void 0 : selectedOption.name) !== null && _a !== void 0 ? _a : "(Not Selected)";
+        }
     }
     setStrategyPolyfillOpened(opened) {
         if (this.strategy.name != "polyfill") {
@@ -350,24 +364,43 @@ export class SelectComponent extends ElementWithLabel {
         if (opened != this.strategy.opened) {
             if (opened) {
                 const list = this.strategy.list;
-                this.strategy.wrapper.appendChild(this.strategy.list);
-                if ("screenTop" in window && "innerHeight" in window) {
-                    const displayRect = list.getBoundingClientRect();
-                    const viewportBottom = window.screenTop + window.innerHeight;
-                    const spaceBelow = viewportBottom - displayRect.bottom;
-                    if (spaceBelow < 20) {
-                        list.classList.add("top");
-                    }
-                    else {
-                        list.classList.add("bottom");
-                    }
+                const displayRect = this.strategy.display.getBoundingClientRect();
+                // Teleport to body with fixed positioning to escape any overflow clipping
+                document.body.appendChild(list);
+                list.style.position = "fixed";
+                list.style.width = displayRect.width + "px";
+                list.style.left = displayRect.left + "px";
+                list.style.zIndex = "9999";
+                list.classList.remove("top");
+                list.classList.remove("bottom");
+                if (this.strategy.forceTop) {
+                    list.style.bottom = (window.innerHeight - displayRect.top) + "px";
+                    list.style.top = "auto";
                 }
                 else {
-                    list.classList.add("bottom");
+                    const spaceBelow = window.innerHeight - displayRect.bottom;
+                    if (spaceBelow < 120) {
+                        list.style.bottom = (window.innerHeight - displayRect.top) + "px";
+                        list.style.top = "auto";
+                    }
+                    else {
+                        list.style.top = displayRect.bottom + "px";
+                        list.style.bottom = "auto";
+                    }
                 }
+                // Close when clicking outside
+                const closeHandler = (e) => {
+                    if (!list.contains(e.target) && e.target !== this.strategy.display) {
+                        this.setStrategyPolyfillOpened(false);
+                        document.removeEventListener("mousedown", closeHandler, true);
+                    }
+                };
+                document.addEventListener("mousedown", closeHandler, true);
             }
             else {
-                this.strategy.wrapper.removeChild(this.strategy.list);
+                if (this.strategy.list.parentNode) {
+                    this.strategy.list.parentNode.removeChild(this.strategy.list);
+                }
                 this.strategy.list.classList.remove("top");
                 this.strategy.list.classList.remove("bottom");
             }

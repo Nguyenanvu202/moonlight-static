@@ -1010,58 +1010,263 @@ class SettingsPanelModal {
         });
     }
 }
+/** Inline SVG icon: cursor hidden (circle + slash) */
+function getIconHideCursor() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "20");
+    svg.setAttribute("height", "20");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "rgba(255,255,255,0.85)");
+    svg.setAttribute("stroke-width", "1.8");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("class", "settings-control-row__icon-svg");
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", "12");
+    circle.setAttribute("cy", "12");
+    circle.setAttribute("r", "5");
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", "5");
+    line.setAttribute("y1", "19");
+    line.setAttribute("x2", "19");
+    line.setAttribute("y2", "5");
+    svg.appendChild(circle);
+    svg.appendChild(line);
+    return svg;
+}
+/** Inline SVG icon: lock */
+function getIconLock() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "20");
+    svg.setAttribute("height", "20");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "rgba(255,255,255,0.85)");
+    svg.setAttribute("stroke-width", "1.8");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("class", "settings-control-row__icon-svg");
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("x", "3");
+    rect.setAttribute("y", "11");
+    rect.setAttribute("width", "18");
+    rect.setAttribute("height", "11");
+    rect.setAttribute("rx", "2");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M7 11V7a5 5 0 0110 0v4");
+    svg.appendChild(rect);
+    svg.appendChild(path);
+    return svg;
+}
+/** Premium toggle: wraps checkbox in label + track with glossy knob */
+function createPremiumToggle(checkboxInput) {
+    const label = document.createElement("label");
+    label.className = "settings-toggle-wrap";
+    checkboxInput.classList.add("settings-toggle-input");
+    const track = document.createElement("span");
+    track.className = "settings-toggle__track";
+    label.appendChild(checkboxInput);
+    label.appendChild(track);
+    return label;
+}
+/** Reusable settings row: left = icon + label, divider, right = control */
+function createSettingsControlRow(opts) {
+    const { iconSvg, labelText, controlEl } = opts;
+    const row = document.createElement("div");
+    row.className = "settings-control-row";
+    const labelSection = document.createElement("div");
+    labelSection.className = "settings-control-row__label";
+    const iconWrap = document.createElement("span");
+    iconWrap.className = "settings-control-row__icon";
+    iconWrap.appendChild(iconSvg);
+    const text = document.createElement("span");
+    text.className = "settings-control-row__text";
+    text.textContent = labelText;
+    labelSection.appendChild(iconWrap);
+    labelSection.appendChild(text);
+    const divider = document.createElement("span");
+    divider.className = "settings-control-row__divider";
+    divider.setAttribute("aria-hidden", "true");
+    const controlSection = document.createElement("div");
+    controlSection.className = "settings-control-row__control";
+    controlSection.appendChild(controlEl);
+    row.appendChild(labelSection);
+    row.appendChild(divider);
+    row.appendChild(controlSection);
+    return row;
+}
 class ViewerSidebar {
     constructor(app) {
-        this.div = document.createElement("div");
-        this.buttonDiv = document.createElement("div");
-        this.sendKeycodeButton = document.createElement("button");
-        this.keyboardButton = document.createElement("button");
-        this.screenKeyboard = new ScreenKeyboard();
-        this.lockMouseButton = document.createElement("button");
-        this.fullscreenButton = document.createElement("button");
-        this.statsButton = document.createElement("button");
-        this.exitStreamButton = document.createElement("button");
-        this.hideCursorLabel = document.createElement("label");
-        this.hideCursorCheckbox = document.createElement("input");
         this.app = app;
-        // Configure divs
+        this.selectedMode = null; // null | "pc" | "phone"
+        this.div = document.createElement("div");
         this.div.classList.add("sidebar-stream");
-        this.buttonDiv.classList.add("sidebar-stream-buttons");
-        this.div.appendChild(this.buttonDiv);
-        // Send keycode
-        this.sendKeycodeButton.innerText = "Send Keycode";
+        this.screenKeyboard = new ScreenKeyboard();
+        this.screenKeyboard.addKeyDownListener(this.onKeyDown.bind(this));
+        this.screenKeyboard.addKeyUpListener(this.onKeyUp.bind(this));
+        this.screenKeyboard.addTextListener(this.onText.bind(this));
+        this.div.appendChild(this.screenKeyboard.getHiddenElement());
+        const openSettings = () => {
+            setSidebarExtended(false);
+            showModal(new SettingsPanelModal(this.app));
+        };
+        // ---- Mode selection view (tier 1) ----
+        this.modeSelectView = document.createElement("div");
+        this.modeSelectView.setAttribute("data-sidebar-view", "mode-select");
+        this.modeSelectView.classList.add("sidebar-mode-select");
+        const pcModeBtn = document.createElement("button");
+        pcModeBtn.className = "sidebar-stream-cta";
+        const pcModeIcon = document.createElement("img");
+        pcModeIcon.src = "resources/desktop_windows-48px.svg";
+        pcModeIcon.alt = "";
+        pcModeIcon.className = "sidebar-stream-cta-icon";
+        pcModeBtn.appendChild(pcModeIcon);
+        pcModeBtn.appendChild(document.createTextNode("PC Mode"));
+        pcModeBtn.addEventListener("click", () => this.setSelectedMode("pc"));
+        const phoneModeBtn = document.createElement("button");
+        phoneModeBtn.className = "sidebar-stream-cta";
+        const phoneModeIcon = document.createElement("img");
+        phoneModeIcon.src = "resources/smartphone.svg";
+        phoneModeIcon.alt = "";
+        phoneModeIcon.className = "sidebar-stream-cta-icon";
+        phoneModeBtn.appendChild(phoneModeIcon);
+        phoneModeBtn.appendChild(document.createTextNode("Phone Mode"));
+        phoneModeBtn.addEventListener("click", () => this.setSelectedMode("phone"));
+        this.modeSelectView.appendChild(pcModeBtn);
+        this.modeSelectView.appendChild(phoneModeBtn);
+        this.div.appendChild(this.modeSelectView);
+        // ---- Phone panel ----
+        this.phonePanelView = document.createElement("div");
+        this.phonePanelView.setAttribute("data-sidebar-view", "phone");
+        const phonePanelHeader = document.createElement("div");
+        phonePanelHeader.classList.add("sidebar-panel-header");
+        const backBtnPhone = document.createElement("button");
+        backBtnPhone.className = "sidebar-back-btn";
+        backBtnPhone.innerText = "← Back";
+        backBtnPhone.addEventListener("click", () => this.setSelectedMode(null));
+        phonePanelHeader.appendChild(backBtnPhone);
+        const statsHeaderPhone = document.createElement("button");
+        statsHeaderPhone.classList.add("sidebar-panel-stats-btn");
+        const statsIconPhone = document.createElement("img");
+        statsIconPhone.src = "resources/route.svg";
+        statsIconPhone.alt = "";
+        statsIconPhone.className = "sidebar-btn-icon";
+        statsHeaderPhone.appendChild(statsIconPhone);
+        statsHeaderPhone.appendChild(document.createTextNode("Stats"));
+        statsHeaderPhone.addEventListener("click", () => {
+            var _a;
+            const stats = (_a = this.app.getStream()) === null || _a === void 0 ? void 0 : _a.getStats();
+            if (stats)
+                stats.toggle();
+        });
+        phonePanelHeader.appendChild(statsHeaderPhone);
+        this.phonePanelView.appendChild(phonePanelHeader);
+        const phonePanelContent = document.createElement("div");
+        phonePanelContent.classList.add("sidebar-panel-content", "sidebar-stream-buttons");
+        this.sendKeycodeButton = document.createElement("button");
+        this.sendKeycodeButton.classList.add("sidebar-btn-with-icon");
+        const sendKeycodeIcon = document.createElement("img");
+        sendKeycodeIcon.src = "resources/send.svg";
+        sendKeycodeIcon.alt = "";
+        sendKeycodeIcon.className = "sidebar-btn-icon";
+        this.sendKeycodeButton.appendChild(sendKeycodeIcon);
+        this.sendKeycodeButton.appendChild(document.createTextNode("Send Keycode"));
         this.sendKeycodeButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
             var _a, _b;
             const key = yield showModal(new SendKeycodeModal());
-            if (key == null) {
+            if (key == null)
                 return;
-            }
             (_a = this.app.getStream()) === null || _a === void 0 ? void 0 : _a.getInput().sendKey(true, key, 0);
             (_b = this.app.getStream()) === null || _b === void 0 ? void 0 : _b.getInput().sendKey(false, key, 0);
         }));
-        this.buttonDiv.appendChild(this.sendKeycodeButton);
-        // Pointer Lock
-        this.lockMouseButton.innerText = "Lock Mouse";
-        this.lockMouseButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
-            yield this.app.requestPointerLock(true);
-        }));
-        this.buttonDiv.appendChild(this.lockMouseButton);
-        // Pop up keyboard
-        this.keyboardButton.innerText = "Keyboard";
+        const settingsButtonPhone = document.createElement("button");
+        settingsButtonPhone.classList.add("sidebar-btn-with-icon");
+        const settingsIconPhone = document.createElement("img");
+        settingsIconPhone.src = "resources/settings-gear.svg";
+        settingsIconPhone.alt = "";
+        settingsIconPhone.className = "sidebar-btn-icon";
+        settingsButtonPhone.appendChild(settingsIconPhone);
+        settingsButtonPhone.appendChild(document.createTextNode("Settings"));
+        settingsButtonPhone.addEventListener("click", openSettings);
+        this.touchMode = new SelectComponent("touchMode", [
+            { value: "touch", name: "Touch" },
+            { value: "mouseRelative", name: "Relative" },
+            { value: "pointAndDrag", name: "Point and Drag" }
+        ], {
+            displayName: "",
+            preSelectedOption: this.app.getInputConfig().touchMode,
+            embeddedLabel: "Touch Mode",
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list"
+        });
+        this.touchMode.addChangeListener(this.onTouchModeChange.bind(this));
+        const touchModeContainer = document.createElement("div");
+        touchModeContainer.classList.add("sidebar-mouse-mode-btn");
+        const settingsTouchModeRow = document.createElement("div");
+        settingsTouchModeRow.classList.add("sidebar-settings-hide-cursor-row");
+        settingsTouchModeRow.appendChild(settingsButtonPhone);
+        settingsTouchModeRow.appendChild(this.sendKeycodeButton);
+        this.keyboardButton = document.createElement("button");
+        this.keyboardButton.classList.add("sidebar-btn-with-icon");
+        const keyboardIcon = document.createElement("img");
+        keyboardIcon.src = "resources/keyboard.svg";
+        keyboardIcon.alt = "";
+        keyboardIcon.className = "sidebar-btn-icon";
+        this.keyboardButton.appendChild(keyboardIcon);
+        this.keyboardButton.appendChild(document.createTextNode("Keyboard"));
         this.keyboardButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
             setSidebarExtended(false);
             this.screenKeyboard.show();
         }));
-        this.buttonDiv.appendChild(this.keyboardButton);
-        // Hide host cursor toggle (cursor drawn in the stream; does not hide client/browser cursor)
+        const sendKeycodeKeyboardRow = document.createElement("div");
+        sendKeycodeKeyboardRow.classList.add("sidebar-touch-mode-row");
+        sendKeycodeKeyboardRow.appendChild(touchModeContainer);
+        sendKeycodeKeyboardRow.appendChild(this.keyboardButton);
+        phonePanelContent.appendChild(settingsTouchModeRow);
+        phonePanelContent.appendChild(sendKeycodeKeyboardRow);
+        this.phonePanelView.appendChild(phonePanelContent);
+        this.touchMode.mount(touchModeContainer);
+        this.div.appendChild(this.phonePanelView);
+        // ---- PC panel ----
+        this.pcPanelView = document.createElement("div");
+        this.pcPanelView.setAttribute("data-sidebar-view", "pc");
+        const pcPanelHeader = document.createElement("div");
+        pcPanelHeader.classList.add("sidebar-panel-header");
+        const backBtnPc = document.createElement("button");
+        backBtnPc.className = "sidebar-back-btn";
+        backBtnPc.innerText = "← Back";
+        backBtnPc.addEventListener("click", () => this.setSelectedMode(null));
+        pcPanelHeader.appendChild(backBtnPc);
+        const statsHeaderPc = document.createElement("button");
+        statsHeaderPc.classList.add("sidebar-panel-stats-btn");
+        const statsIconPc = document.createElement("img");
+        statsIconPc.src = "resources/route.svg";
+        statsIconPc.alt = "";
+        statsIconPc.className = "sidebar-btn-icon";
+        statsHeaderPc.appendChild(statsIconPc);
+        statsHeaderPc.appendChild(document.createTextNode("Stats"));
+        statsHeaderPc.addEventListener("click", () => {
+            var _a;
+            const stats = (_a = this.app.getStream()) === null || _a === void 0 ? void 0 : _a.getStats();
+            if (stats)
+                stats.toggle();
+        });
+        pcPanelHeader.appendChild(statsHeaderPc);
+        this.pcPanelView.appendChild(pcPanelHeader);
+        const pcPanelContent = document.createElement("div");
+        pcPanelContent.classList.add("sidebar-panel-content", "sidebar-stream-buttons");
+        const settingsButtonPc = document.createElement("button");
+        settingsButtonPc.classList.add("sidebar-btn-with-icon");
+        const settingsIconPc = document.createElement("img");
+        settingsIconPc.src = "resources/settings-gear.svg";
+        settingsIconPc.alt = "";
+        settingsIconPc.className = "sidebar-btn-icon";
+        settingsButtonPc.appendChild(settingsIconPc);
+        settingsButtonPc.appendChild(document.createTextNode("Settings"));
+        settingsButtonPc.addEventListener("click", openSettings);
+        this.hideCursorCheckbox = document.createElement("input");
         this.hideCursorCheckbox.type = "checkbox";
-        this.hideCursorLabel.appendChild(this.hideCursorCheckbox);
-        this.hideCursorLabel.appendChild(document.createTextNode(" Hide host cursor"));
         this.hideCursorCheckbox.addEventListener("change", () => {
             var _a;
-            // Sunshine only applies the shortcut when it sees separate Ctrl/Alt/Shift key events
-            // (it sets shortcutFlags from those). Simulate full sequence: Ctrl down, Alt down,
-            // Shift down, N down, N up, Shift up, Alt up, Ctrl up.
             const input = (_a = this.app.getStream()) === null || _a === void 0 ? void 0 : _a.getInput();
             if (input) {
                 input.sendKey(true, StreamKeys.VK_LCONTROL, 0);
@@ -1074,80 +1279,121 @@ class ViewerSidebar {
                 input.sendKey(false, StreamKeys.VK_LCONTROL, 0);
             }
         });
-        this.buttonDiv.appendChild(this.hideCursorLabel);
-        // Moonlight Settings panel
-        const settingsButton = document.createElement("button");
-        settingsButton.innerText = "Settings";
-        settingsButton.addEventListener("click", () => {
-            setSidebarExtended(false);
-            showModal(new SettingsPanelModal(this.app));
+        const hideCursorToggleWrap = createPremiumToggle(this.hideCursorCheckbox);
+        const hideCursorRow = createSettingsControlRow({
+            iconSvg: getIconHideCursor(),
+            labelText: "Hide Host Cursor",
+            controlEl: hideCursorToggleWrap
         });
-        this.buttonDiv.appendChild(settingsButton);
-        this.screenKeyboard.addKeyDownListener(this.onKeyDown.bind(this));
-        this.screenKeyboard.addKeyUpListener(this.onKeyUp.bind(this));
-        this.screenKeyboard.addTextListener(this.onText.bind(this));
-        this.div.appendChild(this.screenKeyboard.getHiddenElement());
-        // Fullscreen
-        this.fullscreenButton.innerText = "Fullscreen";
-        this.fullscreenButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
-            if (this.app.isFullscreen()) {
-                yield this.app.exitFullscreen();
-            }
-            else {
-                yield this.app.requestFullscreen();
-            }
+        const hideCursorTextSpan = hideCursorRow.querySelector(".settings-control-row__text");
+        if (hideCursorTextSpan)
+            hideCursorTextSpan.innerHTML = "Hide<br>Host Cursor";
+        const settingsHideCursorRow = document.createElement("div");
+        settingsHideCursorRow.classList.add("sidebar-settings-hide-cursor-row", "sidebar-pc-settings-row");
+        settingsHideCursorRow.appendChild(settingsButtonPc);
+        settingsHideCursorRow.appendChild(hideCursorRow);
+        this.lockMouseCheckbox = document.createElement("input");
+        this.lockMouseCheckbox.type = "checkbox";
+        this.lockMouseCheckbox.addEventListener("change", () => __awaiter(this, void 0, void 0, function* () {
+            if (this.lockMouseCheckbox.checked)
+                yield this.app.requestPointerLock(true);
+            else
+                yield this.app.exitPointerLock();
         }));
-        this.buttonDiv.appendChild(this.fullscreenButton);
-        // Stats
-        this.statsButton.innerText = "Stats";
-        this.statsButton.addEventListener("click", () => {
-            var _a;
-            const stats = (_a = this.app.getStream()) === null || _a === void 0 ? void 0 : _a.getStats();
-            if (stats) {
-                stats.toggle();
-            }
+        document.addEventListener("pointerlockchange", () => {
+            this.lockMouseCheckbox.checked = !!document.pointerLockElement;
         });
-        this.buttonDiv.appendChild(this.statsButton);
-        // Close stream
-        this.exitStreamButton.innerText = "Exit";
-        this.exitStreamButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
-            const stream = this.app.getStream();
-            if (stream) {
-                const success = yield stream.stop();
-                if (!success) {
-                    console.debug("Failed to close stream correctly");
-                }
-            }
-            if (window.matchMedia('(display-mode: standalone)').matches) {
-                history.back();
-            }
-            else {
-                window.close();
-            }
-        }));
-        this.buttonDiv.appendChild(this.exitStreamButton);
-        // Select Mouse Mode
+        const lockMouseToggleWrap = createPremiumToggle(this.lockMouseCheckbox);
+        const lockMouseRow = createSettingsControlRow({
+            iconSvg: getIconLock(),
+            labelText: "Lock Mouse",
+            controlEl: lockMouseToggleWrap
+        });
         this.mouseMode = new SelectComponent("mouseMode", [
             { value: "relative", name: "Relative" },
             { value: "follow", name: "Follow" },
             { value: "pointAndDrag", name: "Point and Drag" }
         ], {
-            displayName: "Mouse Mode",
-            preSelectedOption: this.app.getInputConfig().mouseMode
+            displayName: "",
+            preSelectedOption: this.app.getInputConfig().mouseMode,
+            embeddedLabel: "Mouse Mode",
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list"
         });
         this.mouseMode.addChangeListener(this.onMouseModeChange.bind(this));
-        this.mouseMode.mount(this.div);
-        // Select Touch Mode
-        this.touchMode = new SelectComponent("touchMode", [
-            { value: "touch", name: "Touch" },
-            { value: "mouseRelative", name: "Relative" },
-            { value: "pointAndDrag", name: "Point and Drag" }
-        ], {
-            displayName: "Touch Mode",
-            preSelectedOption: this.app.getInputConfig().touchMode
+        const mouseModeContainer = document.createElement("div");
+        mouseModeContainer.classList.add("sidebar-mouse-lock-cell", "sidebar-mouse-mode-btn");
+        const mouseModeLockMouseRow = document.createElement("div");
+        mouseModeLockMouseRow.classList.add("sidebar-mouse-mode-lock-row");
+        mouseModeLockMouseRow.appendChild(mouseModeContainer);
+        mouseModeLockMouseRow.appendChild(lockMouseRow);
+        pcPanelContent.appendChild(settingsHideCursorRow);
+        pcPanelContent.appendChild(mouseModeLockMouseRow);
+        this.mouseMode.mount(mouseModeContainer);
+        this.pcPanelView.appendChild(pcPanelContent);
+        this.div.appendChild(this.pcPanelView);
+        // ---- Common section (Stats, Fullscreen, Exit) ----
+        this.commonSection = document.createElement("div");
+        this.commonSection.classList.add("sidebar-common", "sidebar-stream-buttons");
+        this.fullscreenButton = document.createElement("button");
+        this.fullscreenButton.classList.add("sidebar-btn-with-icon", "sidebar-fullscreen-btn");
+        const fullscreenIcon = document.createElement("img");
+        fullscreenIcon.src = "resources/expand.svg";
+        fullscreenIcon.alt = "";
+        fullscreenIcon.className = "sidebar-btn-icon";
+        this.fullscreenButton.appendChild(fullscreenIcon);
+        this.fullscreenButton.appendChild(document.createTextNode("Fullscreen"));
+        this.fullscreenButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
+            if (this.app.isFullscreen())
+                yield this.app.exitFullscreen();
+            else
+                yield this.app.requestFullscreen();
+        }));
+        this.statsButton = document.createElement("button");
+        this.statsButton.classList.add("sidebar-btn-with-icon");
+        const statsIcon = document.createElement("img");
+        statsIcon.src = "resources/route.svg";
+        statsIcon.alt = "";
+        statsIcon.className = "sidebar-btn-icon";
+        this.statsButton.appendChild(statsIcon);
+        this.statsButton.appendChild(document.createTextNode("Stats"));
+        this.statsButton.addEventListener("click", () => {
+            var _a;
+            const stats = (_a = this.app.getStream()) === null || _a === void 0 ? void 0 : _a.getStats();
+            if (stats)
+                stats.toggle();
         });
-        this.touchMode.addChangeListener(this.onTouchModeChange.bind(this));
-        this.touchMode.mount(this.div);
+        this.exitStreamButton = document.createElement("button");
+        this.exitStreamButton.className = "sidebar-exit-btn sidebar-btn-with-icon";
+        const exitIcon = document.createElement("img");
+        exitIcon.src = "resources/square-arrow-right-exit.svg";
+        exitIcon.alt = "";
+        exitIcon.className = "sidebar-btn-icon";
+        this.exitStreamButton.appendChild(exitIcon);
+        this.exitStreamButton.appendChild(document.createTextNode("Exit"));
+        this.exitStreamButton.addEventListener("click", () => __awaiter(this, void 0, void 0, function* () {
+            const stream = this.app.getStream();
+            if (stream) {
+                const success = yield stream.stop();
+                if (!success)
+                    console.debug("Failed to close stream correctly");
+            }
+            if (window.matchMedia('(display-mode: standalone)').matches)
+                history.back();
+            else
+                window.close();
+        }));
+        this.commonSection.appendChild(this.fullscreenButton);
+        this.commonSection.appendChild(this.exitStreamButton);
+        this.div.appendChild(this.commonSection);
+        this.setSelectedMode(null);
+    }
+    setSelectedMode(mode) {
+        this.selectedMode = mode;
+        this.modeSelectView.classList.toggle("sidebar-view-visible", mode === null);
+        this.phonePanelView.classList.toggle("sidebar-view-visible", mode === "phone");
+        this.pcPanelView.classList.toggle("sidebar-view-visible", mode === "pc");
+        this.commonSection.classList.toggle("sidebar-view-visible", mode !== null);
     }
     onCapabilitiesChange(capabilities) {
         this.touchMode.setOptionEnabled("touch", capabilities.touch);
