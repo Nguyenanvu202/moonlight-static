@@ -4,9 +4,9 @@ const trueDefaultSettings =
 {
     // possible values: "left", "right", "up", "down"
     "sidebarEdge": "left",
-    "bitrate": 10000,
+    "bitrate": 30000,
     "packetSize": 2048,
-    "fps": 60,
+    "fps": 70,
     "videoFrameQueueSize": 3,
     // possible values: "720p", "1080p", "1440p", "4k", "native", "custom"
     "videoSize": "custom",
@@ -17,7 +17,7 @@ const trueDefaultSettings =
     },
     // possible values: "h264", "h265", "av1", "auto"
     "videoCodec": "h264",
-    "forceVideoElementRenderer": false,
+    "forceVideoElementRenderer": true,
     "canvasRenderer": false,
     // Canvas only: when true, draw only on requestAnimationFrame (stable, may add ~0–17 ms). When false, draw on frame submit (low latency).
     "canvasVsync": false,
@@ -32,7 +32,7 @@ const trueDefaultSettings =
         "sendIntervalOverride": null
     },
     // possible values: "auto", "webrtc", "websocket"
-    "dataTransport": "auto",
+    "dataTransport": "webrtc",
     "toggleFullscreenWithKeybind": false,
     // possible values: "standard", "old"
     "pageStyle": "standard",

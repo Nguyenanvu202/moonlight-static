@@ -22,6 +22,361 @@ import { StreamKeys } from "./api_bindings.js";
 import { ScreenKeyboard } from "./screen_keyboard.js";
 import { FormModal } from "./component/modal/form.js";
 import { streamStatsToText } from "./stream/stats.js";
+
+// Moonlight full-screen loading overlay used while establishing the stream connection.
+const MoonlightLoadingScreen = (() => {
+    const CSS = `
+        @keyframes ml-spin-fwd {
+            to { stroke-dashoffset: 0; }
+        }
+        @keyframes ml-spin-rev {
+            from { stroke-dashoffset: 0; }
+            to { stroke-dashoffset: 339; }
+        }
+        @keyframes ml-pulse {
+            0%,100% { opacity:.75; transform:translate(-50%,-50%) scale(1); }
+            50%      { opacity:1;   transform:translate(-50%,-50%) scale(1.07); }
+        }
+        @keyframes ml-glow {
+            0%,100% { opacity:.6; }
+            50%      { opacity:1; }
+        }
+        @keyframes ml-fadein {
+            from { opacity:0; transform:translateY(5px); }
+            to   { opacity:1; transform:translateY(0); }
+        }
+        @keyframes ml-dot {
+            0%,80%,100% { opacity:.2; transform:scale(.8); }
+            40%          { opacity:1;  transform:scale(1); }
+        }
+        @keyframes ml-bar {
+            0%   { left:-45%; width:40%; }
+            50%  { left:25%;  width:60%; }
+            100% { left:105%; width:40%; }
+        }
+        @keyframes ml-screenfade {
+            from { opacity:0; }
+            to   { opacity:1; }
+        }
+
+        #ml-loading-screen {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            background: #0c0c10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            animation: ml-screenfade .35s ease both;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            overflow: hidden;
+        }
+
+        #ml-loading-screen::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+        }
+
+        #ml-glow {
+            position: absolute;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            background: radial-gradient(circle,
+                rgba(58,91,255,.22) 0%,
+                rgba(0,200,255,.10) 45%,
+                transparent 70%
+            );
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -62%);
+            animation: ml-glow 3s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        #ml-ring-wrap {
+            position: relative;
+            width: 130px;
+            height: 130px;
+            margin-bottom: 30px;
+        }
+
+        #ml-ring-wrap svg {
+            position: absolute;
+            top: 0; left: 0;
+        }
+
+        #ml-ring-outer {
+            transform-origin: 65px 65px;
+            animation: ml-spin-fwd 3s linear infinite;
+        }
+
+        #ml-ring-inner {
+            transform-origin: 65px 65px;
+            animation: ml-spin-rev 1.8s linear infinite;
+        }
+
+        #ml-logo {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 66px; height: 66px;
+            transform: translate(-50%, -50%);
+            animation: ml-pulse 2.4s ease-in-out infinite;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        #ml-title {
+            color: rgba(255,255,255,.92);
+            font-size: 17px;
+            font-weight: 500;
+            letter-spacing: .03em;
+            margin-bottom: 6px;
+            animation: ml-fadein .6s ease both;
+        }
+
+        #ml-subtitle {
+            color: rgba(255,255,255,.32);
+            font-size: 11px;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+            margin-bottom: 22px;
+            animation: ml-fadein .8s ease .1s both;
+        }
+
+        #ml-dots {
+            display: flex;
+            gap: 7px;
+            animation: ml-fadein 1s ease .2s both;
+        }
+
+        .ml-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4a6fff, #00c8ff);
+            animation: ml-dot 1.4s ease-in-out infinite;
+        }
+        .ml-dot:nth-child(2) { animation-delay: .2s; }
+        .ml-dot:nth-child(3) { animation-delay: .4s; }
+
+        #ml-bar-wrap {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 2px;
+            background: rgba(255,255,255,.05);
+            overflow: hidden;
+        }
+
+        #ml-bar-fill {
+            position: absolute;
+            height: 100%;
+            background: linear-gradient(90deg,
+                transparent,
+                #4a6fff,
+                #00c8ff,
+                transparent
+            );
+            animation: ml-bar 2s ease-in-out infinite;
+        }
+    `;
+
+    const LOGO_SRC = "./resources/sidebar-button-icon.png";
+
+    let _el = null;
+
+    function _injectStyles() {
+        if (document.getElementById("ml-loading-styles"))
+            return;
+        const style = document.createElement("style");
+        style.id = "ml-loading-styles";
+        style.textContent = CSS;
+        document.head.appendChild(style);
+    }
+
+    function _build(title = "Connecting to Moonlight", subtitle = "Establishing stream") {
+        const el = document.createElement("div");
+        el.id = "ml-loading-screen";
+
+        const glow = document.createElement("div");
+        glow.id = "ml-glow";
+        el.appendChild(glow);
+
+        const ringWrap = document.createElement("div");
+        ringWrap.id = "ml-ring-wrap";
+
+        const OUTER_R = 58;
+        const INNER_R = 45;
+        const OUTER_CIRC = +(2 * Math.PI * OUTER_R).toFixed(2);
+        const INNER_CIRC = +(2 * Math.PI * INNER_R).toFixed(2);
+
+        const svgNS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgNS, "svg");
+        svg.setAttribute("width", "130");
+        svg.setAttribute("height", "130");
+        svg.setAttribute("viewBox", "0 0 130 130");
+
+        const defs = document.createElementNS(svgNS, "defs");
+
+        const grad1 = document.createElementNS(svgNS, "linearGradient");
+        grad1.id = "ml-grad1";
+        grad1.setAttribute("x1", "0%");
+        grad1.setAttribute("y1", "0%");
+        grad1.setAttribute("x2", "100%");
+        grad1.setAttribute("y2", "0%");
+        const s1a = document.createElementNS(svgNS, "stop");
+        s1a.setAttribute("offset", "0%");
+        s1a.setAttribute("stop-color", "#3a5bff");
+        const s1b = document.createElementNS(svgNS, "stop");
+        s1b.setAttribute("offset", "100%");
+        s1b.setAttribute("stop-color", "#00c8ff");
+        grad1.appendChild(s1a);
+        grad1.appendChild(s1b);
+
+        const grad2 = document.createElementNS(svgNS, "linearGradient");
+        grad2.id = "ml-grad2";
+        grad2.setAttribute("x1", "0%");
+        grad2.setAttribute("y1", "0%");
+        grad2.setAttribute("x2", "100%");
+        grad2.setAttribute("y2", "0%");
+        const s2a = document.createElementNS(svgNS, "stop");
+        s2a.setAttribute("offset", "0%");
+        s2a.setAttribute("stop-color", "#00c8ff");
+        const s2b = document.createElementNS(svgNS, "stop");
+        s2b.setAttribute("offset", "100%");
+        s2b.setAttribute("stop-color", "#3a5bff");
+        grad2.appendChild(s2a);
+        grad2.appendChild(s2b);
+
+        defs.appendChild(grad1);
+        defs.appendChild(grad2);
+        svg.appendChild(defs);
+
+        const trackOuter = document.createElementNS(svgNS, "circle");
+        trackOuter.setAttribute("cx", "65");
+        trackOuter.setAttribute("cy", "65");
+        trackOuter.setAttribute("r", String(OUTER_R));
+        trackOuter.setAttribute("fill", "none");
+        trackOuter.setAttribute("stroke", "rgba(255,255,255,0.05)");
+        trackOuter.setAttribute("stroke-width", "3");
+
+        const trackInner = document.createElementNS(svgNS, "circle");
+        trackInner.setAttribute("cx", "65");
+        trackInner.setAttribute("cy", "65");
+        trackInner.setAttribute("r", String(INNER_R));
+        trackInner.setAttribute("fill", "none");
+        trackInner.setAttribute("stroke", "rgba(255,255,255,0.04)");
+        trackInner.setAttribute("stroke-width", "2");
+
+        const arcOuter = document.createElementNS(svgNS, "circle");
+        arcOuter.id = "ml-ring-outer";
+        arcOuter.setAttribute("cx", "65");
+        arcOuter.setAttribute("cy", "65");
+        arcOuter.setAttribute("r", String(OUTER_R));
+        arcOuter.setAttribute("fill", "none");
+        arcOuter.setAttribute("stroke", "url(#ml-grad1)");
+        arcOuter.setAttribute("stroke-width", "3");
+        arcOuter.setAttribute("stroke-linecap", "round");
+        arcOuter.setAttribute("stroke-dasharray", String(OUTER_CIRC));
+        arcOuter.setAttribute("stroke-dashoffset", String(OUTER_CIRC * 0.72));
+        arcOuter.setAttribute("transform", "rotate(-90 65 65)");
+
+        const arcInner = document.createElementNS(svgNS, "circle");
+        arcInner.id = "ml-ring-inner";
+        arcInner.setAttribute("cx", "65");
+        arcInner.setAttribute("cy", "65");
+        arcInner.setAttribute("r", String(INNER_R));
+        arcInner.setAttribute("fill", "none");
+        arcInner.setAttribute("stroke", "url(#ml-grad2)");
+        arcInner.setAttribute("stroke-width", "2");
+        arcInner.setAttribute("stroke-linecap", "round");
+        arcInner.setAttribute("stroke-dasharray", String(INNER_CIRC));
+        arcInner.setAttribute("stroke-dashoffset", String(INNER_CIRC * 0.65));
+        arcInner.setAttribute("transform", "rotate(-90 65 65)");
+
+        svg.appendChild(trackOuter);
+        svg.appendChild(trackInner);
+        svg.appendChild(arcOuter);
+        svg.appendChild(arcInner);
+
+        const logo = document.createElement("img");
+        logo.id = "ml-logo";
+        logo.src = LOGO_SRC;
+        logo.alt = "Moonlight";
+
+        ringWrap.appendChild(svg);
+        ringWrap.appendChild(logo);
+        el.appendChild(ringWrap);
+
+        const titleEl = document.createElement("div");
+        titleEl.id = "ml-title";
+        titleEl.textContent = title;
+
+        const subtitleEl = document.createElement("div");
+        subtitleEl.id = "ml-subtitle";
+        subtitleEl.textContent = subtitle;
+
+        const dotsEl = document.createElement("div");
+        dotsEl.id = "ml-dots";
+        for (let i = 0; i < 3; i++) {
+            const d = document.createElement("div");
+            d.className = "ml-dot";
+            dotsEl.appendChild(d);
+        }
+
+        el.appendChild(titleEl);
+        el.appendChild(subtitleEl);
+        el.appendChild(dotsEl);
+
+        const barWrap = document.createElement("div");
+        barWrap.id = "ml-bar-wrap";
+        const barFill = document.createElement("div");
+        barFill.id = "ml-bar-fill";
+        barWrap.appendChild(barFill);
+        el.appendChild(barWrap);
+
+        return el;
+    }
+
+    return {
+        show(title, subtitle) {
+            if (_el)
+                return;
+            _injectStyles();
+            _el = _build(title, subtitle);
+            document.body.appendChild(_el);
+        },
+        hide(fadeMs = 300) {
+            if (!_el)
+                return;
+            _el.style.transition = `opacity ${fadeMs}ms ease`;
+            _el.style.opacity = "0";
+            setTimeout(() => {
+                if (_el && _el.parentNode) {
+                    _el.parentNode.removeChild(_el);
+                }
+                _el = null;
+            }, fadeMs);
+        },
+        setTitle(text) {
+            const t = document.getElementById("ml-title");
+            if (t)
+                t.textContent = text;
+        },
+        setSubtitle(text) {
+            const s = document.getElementById("ml-subtitle");
+            if (s)
+                s.textContent = text;
+        },
+    };
+})();
 function startApp() {
     return __awaiter(this, void 0, void 0, function* () {
         const api = yield getApi();
@@ -156,13 +511,11 @@ class ViewerApp {
             setSidebarStyle({
                 edge: settings.sidebarEdge,
             });
+            // Show full-screen Moonlight loading overlay while establishing the stream.
+            MoonlightLoadingScreen.show();
             this.stream = new Stream(this.api, hostId, appId, settings, browserSize);
             // Add app info listener
             this.stream.addInfoListener(this.onInfo.bind(this));
-            // Create connection info modal
-            const connectionInfo = new ConnectionInfoModal();
-            this.stream.addInfoListener(connectionInfo.onInfo.bind(connectionInfo));
-            showModal(connectionInfo);
             // Start animation frame loop
             this.onTouchUpdate();
             this.onGamepadUpdate();
@@ -203,6 +556,20 @@ class ViewerApp {
             }
             else if (data.type == "connectionComplete") {
                 this.sidebar.onCapabilitiesChange(data.capabilities);
+                MoonlightLoadingScreen.hide();
+            }
+            else if (data.type == "addDebugLine") {
+                const message = data.line.trim();
+                if (message && data.additional && (data.additional.type === "fatal" || data.additional.type === "fatalDescription")) {
+                    showErrorPopup(message);
+                    MoonlightLoadingScreen.hide();
+                }
+                else if (data.additional && data.additional.type === "informError") {
+                    showErrorPopup(data.line);
+                }
+            }
+            else if (data.type == "serverMessage") {
+                MoonlightLoadingScreen.setSubtitle(`Server: ${data.message}`);
             }
         });
     }
@@ -380,8 +747,8 @@ class ViewerApp {
         const body = document.body;
         if (!body) return;
     
-        const SIZE = 64;
-        const RADIUS = 28;
+        const SIZE = 48;
+        const RADIUS = 18;
         const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
     
         const wrapper = document.createElement("div");
@@ -393,6 +760,11 @@ class ViewerApp {
         wrapper.style.zIndex = "10000";
         wrapper.style.display = "none";
         wrapper.style.cursor = "default";
+        wrapper.style.borderRadius = "50%";
+        wrapper.style.backdropFilter = "blur(8px)";
+        wrapper.style.webkitBackdropFilter = "blur(8px)";
+        wrapper.style.background = "rgba(20, 20, 22, 0.75)";
+        wrapper.style.boxShadow = "0 2px 12px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.08)";
     
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svg.setAttribute("viewBox", `0 0 ${SIZE} ${SIZE}`);
@@ -402,51 +774,44 @@ class ViewerApp {
         svg.style.top = "0";
         svg.style.left = "0";
     
-        // Dark background circle
-        const bgCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        bgCircle.setAttribute("cx", "32");
-        bgCircle.setAttribute("cy", "32");
-        bgCircle.setAttribute("r", `${RADIUS}`);
-        bgCircle.setAttribute("fill", "rgba(0,0,0,0.5)");
-    
-        // Dim static border
+        // Dim track ring — matches settings panel divider opacity
         const borderCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        borderCircle.setAttribute("cx", "32");
-        borderCircle.setAttribute("cy", "32");
+        borderCircle.setAttribute("cx", "24");
+        borderCircle.setAttribute("cy", "24");
         borderCircle.setAttribute("r", `${RADIUS}`);
         borderCircle.setAttribute("fill", "none");
-        borderCircle.setAttribute("stroke", "rgba(255,255,255,0.2)");
+        borderCircle.setAttribute("stroke", "rgba(255,255,255,0.08)");
         borderCircle.setAttribute("stroke-width", "3");
     
-        // Animated arc
+        // Animated arc — matches settings toggle active color: clean white
         const arc = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        arc.setAttribute("cx", "32");
-        arc.setAttribute("cy", "32");
+        arc.setAttribute("cx", "24");
+        arc.setAttribute("cy", "24");
         arc.setAttribute("r", `${RADIUS}`);
         arc.setAttribute("fill", "none");
-        arc.setAttribute("stroke", "rgba(255,255,255,0.9)");
+        arc.setAttribute("stroke", "rgba(255,255,255,0.85)");
         arc.setAttribute("stroke-width", "3");
         arc.setAttribute("stroke-dasharray", `${CIRCUMFERENCE}`);
         arc.setAttribute("stroke-dashoffset", `${CIRCUMFERENCE}`);
         arc.setAttribute("stroke-linecap", "round");
-        arc.setAttribute("transform", "rotate(-90 32 32)");
+        arc.setAttribute("transform", "rotate(-90 24 24)");
     
-        svg.appendChild(bgCircle);
         svg.appendChild(borderCircle);
         svg.appendChild(arc);
     
-        // Logo image centered inside
+        // Logo — same opacity as settings panel icon strokes (0.85)
         const logoImg = document.createElement("img");
         logoImg.src = "./resources/sidebar-button-icon.png";
         logoImg.alt = "Moonlight";
         logoImg.style.position = "absolute";
         logoImg.style.top = "50%";
         logoImg.style.left = "50%";
-        logoImg.style.width = "36px";
-        logoImg.style.height = "36px";
+        logoImg.style.width = "34px";
+        logoImg.style.height = "34px";
         logoImg.style.transform = "translate(-50%, -50%)";
         logoImg.style.pointerEvents = "none";
-        logoImg.style.transition = "opacity 0.1s ease";
+        logoImg.style.opacity = "0.85";
+        logoImg.style.transition = "opacity 0.08s ease";
     
         wrapper.appendChild(svg);
         wrapper.appendChild(logoImg);
@@ -456,7 +821,7 @@ class ViewerApp {
         this.fullscreenExitCircleArc = arc;
         this.fullscreenExitCircleCircumference = CIRCUMFERENCE;
         this.fullscreenExitCircleLogo = logoImg;
-    }
+    }   
     startFullscreenExitEscHold() {
         if (!this.fullscreenExitCircle || this.fullscreenExitEscActive || !this.isFullscreen()) return;
     
@@ -479,7 +844,7 @@ class ViewerApp {
             }
             flickerVisible = !flickerVisible;
             if (logo) logo.style.opacity = flickerVisible ? "1" : "0.15";
-        }, 80);
+        }, 200);
     
         const animate = (now) => {
             if (!this.fullscreenExitEscActive || !this.isFullscreen()) {
