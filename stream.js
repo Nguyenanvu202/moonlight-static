@@ -426,6 +426,30 @@ const MoonlightFullscreenOverlay = (() => {
             letter-spacing: .05em;
             text-transform: uppercase;
         }
+
+        #mlfso-hint {
+            margin-top: 28px;
+            color: rgba(255, 255, 255, .35);
+            font-size: 12px;
+            letter-spacing: 0.03em;
+        }
+
+        #mlfso-kbd {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            height: 18px;
+            padding: 0 7px;
+            margin: 0 2px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 0.5px solid rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
     `;
 
     let _el = null;
@@ -472,6 +496,11 @@ const MoonlightFullscreenOverlay = (() => {
         el.appendChild(_expandIcon());
         el.appendChild(title);
         el.appendChild(sub);
+
+        const hint = document.createElement("div");
+        hint.id = "mlfso-hint";
+        hint.innerHTML = `Press <span id="mlfso-kbd">ESC</span> to exit fullscreen`;
+        el.appendChild(hint);
 
         return el;
     }
@@ -1045,10 +1074,7 @@ class ViewerApp {
                 }
                 if ("keyboard" in navigator && navigator.keyboard && "lock" in navigator.keyboard) {
                     yield navigator.keyboard.lock();
-                    if (!this.hasShownFullscreenEscapeWarning) {
-                        yield showMessage("To exit Fullscreen you'll have to hold ESC for a few seconds.");
-                    }
-                    this.hasShownFullscreenEscapeWarning = true;
+                    // No fullscreen-exit modal; UX is handled by the ESC hold circle + overlay hint.
                 }
                 if (((_a = this.getStream()) === null || _a === void 0 ? void 0 : _a.getInput().getConfig().mouseMode) == "relative") {
                     yield this.requestPointerLock();
