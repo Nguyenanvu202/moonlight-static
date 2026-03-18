@@ -377,6 +377,143 @@ const MoonlightLoadingScreen = (() => {
         },
     };
 })();
+
+// Overlay that asks for a user gesture before entering fullscreen.
+const MoonlightFullscreenOverlay = (() => {
+    const CSS = `
+        @keyframes mlfso-pulse {
+            0%,100% { opacity: .55; transform: scale(1); }
+            50%      { opacity: 1;   transform: scale(1.1); }
+        }
+        @keyframes mlfso-fadein {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+
+        #mlfso-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 99998;
+            background: rgba(18, 18, 20, 0.82);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            cursor: pointer;
+            user-select: none;
+            animation: mlfso-fadein .3s ease both;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        #mlfso-icon {
+            animation: mlfso-pulse 2.8s ease-in-out infinite;
+        }
+
+        #mlfso-title {
+            color: #ffffff;
+            font-size: 17px;
+            font-weight: 600;
+            letter-spacing: .01em;
+        }
+
+        #mlfso-sub {
+            color: rgba(255, 255, 255, .45);
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+        }
+    `;
+
+    let _el = null;
+    let _keyHandler = null;
+
+    function _injectStyles() {
+        if (document.getElementById("mlfso-styles"))
+            return;
+        const s = document.createElement("style");
+        s.id = "mlfso-styles";
+        s.textContent = CSS;
+        document.head.appendChild(s);
+    }
+
+    function _expandIcon() {
+        const ns = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(ns, "svg");
+        svg.id = "mlfso-icon";
+        svg.setAttribute("width", "44");
+        svg.setAttribute("height", "44");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("fill", "none");
+        svg.setAttribute("stroke", "white");
+        svg.setAttribute("stroke-width", "1.6");
+        svg.setAttribute("stroke-linecap", "round");
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", "M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3");
+        svg.appendChild(path);
+        return svg;
+    }
+
+    function _build() {
+        const el = document.createElement("div");
+        el.id = "mlfso-overlay";
+
+        const title = document.createElement("div");
+        title.id = "mlfso-title";
+        title.textContent = "Tap to enter fullscreen";
+
+        const sub = document.createElement("div");
+        sub.id = "mlfso-sub";
+        sub.textContent = "Click anywhere to continue";
+
+        el.appendChild(_expandIcon());
+        el.appendChild(title);
+        el.appendChild(sub);
+
+        return el;
+    }
+
+    function _trigger(cb) {
+        MoonlightFullscreenOverlay.hide();
+        if (cb)
+            cb();
+    }
+
+    return {
+        show(onFullscreen) {
+            if (_el)
+                return;
+            _injectStyles();
+            _el = _build();
+            _el.addEventListener("click", () => _trigger(onFullscreen), { once: true });
+            _keyHandler = () => _trigger(onFullscreen);
+            document.addEventListener("keydown", _keyHandler, { once: true });
+            document.body.appendChild(_el);
+        },
+        hide(fadeMs = 280) {
+            if (!_el)
+                return;
+            if (_keyHandler) {
+                document.removeEventListener("keydown", _keyHandler);
+                _keyHandler = null;
+            }
+            _el.style.transition = `opacity ${fadeMs}ms ease`;
+            _el.style.opacity = "0";
+            const target = _el;
+            _el = null;
+            setTimeout(() => {
+                if (target.parentNode)
+                    target.parentNode.removeChild(target);
+            }, fadeMs);
+        },
+        isVisible() {
+            return _el !== null;
+        },
+    };
+})();
 function startApp() {
     return __awaiter(this, void 0, void 0, function* () {
         const api = yield getApi();
@@ -439,6 +576,8 @@ class ViewerApp {
         this.api = api;
         this.hostId = hostId;
         this.appId = appId;
+        // Ask for a user gesture to allow entering fullscreen later.
+        MoonlightFullscreenOverlay.show(() => this.requestFullscreen());
         // Configure sidebar
         this.sidebar = new ViewerSidebar(this);
         setSidebar(this.sidebar);
@@ -949,6 +1088,10 @@ class ViewerApp {
             this.checkFullyImmersed();
             if (!this.isFullscreen()) {
                 this.cancelFullscreenExitEscHold();
+            }
+            else {
+                // Once fullscreen is successfully entered, remove the gesture overlay.
+                MoonlightFullscreenOverlay.hide();
             }
         });
     }
