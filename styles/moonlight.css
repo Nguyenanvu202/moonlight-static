@@ -136,6 +136,57 @@ input[type="checkbox"]:checked::after {
     opacity: 1;
 }
 
+/* Settings modal checkboxes -> sidebar-style toggle switch */
+.modal-settings-panel input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 50px;
+    height: 28px;
+    min-width: 50px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    background: rgba(70, 70, 88, 0.75) !important;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35) !important;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    flex-shrink: 0;
+}
+
+.modal-settings-panel input[type="checkbox"]::before {
+    content: none;
+}
+
+.modal-settings-panel input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transform: translateX(0);
+    opacity: 1;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.modal-settings-panel input[type="checkbox"]:hover {
+    border-color: rgba(255, 255, 255, 0.22) !important;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.45), 0 0 8px rgba(255, 255, 255, 0.12) !important;
+}
+
+.modal-settings-panel input[type="checkbox"]:checked {
+    background: #3d6ef6 !important;
+    border-color: rgba(90, 134, 255, 0.7) !important;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.35), 0 0 10px rgba(61, 110, 246, 0.32) !important;
+}
+
+.modal-settings-panel input[type="checkbox"]:checked::after {
+    transform: translateX(22px);
+}
+
 /** Slider */
 input[type="range"] {
     accent-color: rgba(63, 81, 181, 1.0);
@@ -440,6 +491,24 @@ input[type=number] {
     height: 48px;
     flex-shrink: 0;
     cursor: pointer;
+}
+.sidebar-arrow-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: #000000c2;
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border-radius: 8px;
+    border: 1px solid #444;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+#sidebar-button:hover .sidebar-arrow-panel {
+    background: rgba(60, 60, 80, 0.85);
+    border-color: rgba(180, 180, 255, 0.55);
+    box-shadow: 0 0 10px rgba(180, 180, 255, 0.35), 0 0 22px rgba(180, 180, 255, 0.15);
 }
 .sidebar-button-panel .sidebar-button-image {
     width: 20px;

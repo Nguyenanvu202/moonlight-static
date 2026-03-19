@@ -92,6 +92,8 @@ export class StreamSettingsComponent {
         ], {
             displayName: "Sidebar Edge",
             preSelectedOption: (_a = settings === null || settings === void 0 ? void 0 : settings.sidebarEdge) !== null && _a !== void 0 ? _a : defaultSettings_.sidebarEdge,
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list",
         });
         this.sidebarEdge.addChangeListener(this.onSettingsChange.bind(this));
         this.sidebarEdge.mount(this.sidebarSection);
@@ -131,6 +133,8 @@ export class StreamSettingsComponent {
         this.videoSize = new SelectComponent("videoPreset", getVideoPresetOptions(), {
             displayName: "Video Preset",
             preSelectedOption: (_e = settings === null || settings === void 0 ? void 0 : settings.videoSize) !== null && _e !== void 0 ? _e : defaultSettings_.videoSize,
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list",
         });
         this.videoSize.addChangeListener(this.onSettingsChange.bind(this));
         this.videoSize.mount(this.streamSection);
@@ -161,7 +165,9 @@ export class StreamSettingsComponent {
             { value: "av1", name: "AV1 (Experimental)" },
         ], {
             displayName: "Video Codec",
-            preSelectedOption: (_g = settings === null || settings === void 0 ? void 0 : settings.videoCodec) !== null && _g !== void 0 ? _g : defaultSettings_.videoCodec
+            preSelectedOption: (_g = settings === null || settings === void 0 ? void 0 : settings.videoCodec) !== null && _g !== void 0 ? _g : defaultSettings_.videoCodec,
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list",
         });
         this.videoCodec.addChangeListener(this.onSettingsChange.bind(this));
         this.videoCodec.mount(this.streamSection);
@@ -215,7 +221,9 @@ export class StreamSettingsComponent {
             { value: "normal", name: "Normal" }
         ], {
             displayName: "Scroll Mode",
-            preSelectedOption: (settings === null || settings === void 0 ? void 0 : settings.mouseScrollMode) || defaultSettings_.mouseScrollMode
+            preSelectedOption: (settings === null || settings === void 0 ? void 0 : settings.mouseScrollMode) || defaultSettings_.mouseScrollMode,
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list",
         });
         this.mouseScrollMode.addChangeListener(this.onSettingsChange.bind(this));
         this.mouseScrollMode.mount(this.mouseSection);
@@ -265,7 +273,9 @@ export class StreamSettingsComponent {
             { value: "websocket", name: "Web Socket (Experimental)" },
         ], {
             displayName: "Data Transport",
-            preSelectedOption: (_o = settings === null || settings === void 0 ? void 0 : settings.dataTransport) !== null && _o !== void 0 ? _o : defaultSettings_.dataTransport
+            preSelectedOption: (_o = settings === null || settings === void 0 ? void 0 : settings.dataTransport) !== null && _o !== void 0 ? _o : defaultSettings_.dataTransport,
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list",
         });
         this.dataTransport.addChangeListener(this.onSettingsChange.bind(this));
         this.dataTransport.mount(this.otherSection);
@@ -279,7 +289,9 @@ export class StreamSettingsComponent {
             { value: "moonlight", name: "Moonlight" },
         ], {
             displayName: "Style",
-            preSelectedOption: (_p = settings === null || settings === void 0 ? void 0 : settings.pageStyle) !== null && _p !== void 0 ? _p : defaultSettings_.pageStyle
+            preSelectedOption: (_p = settings === null || settings === void 0 ? void 0 : settings.pageStyle) !== null && _p !== void 0 ? _p : defaultSettings_.pageStyle,
+            forcePolyfill: true,
+            listClass: "sidebar-stream-select-list",
         });
         this.pageStyle.addChangeListener(this.onSettingsChange.bind(this));
         this.pageStyle.mount(this.otherSection);
