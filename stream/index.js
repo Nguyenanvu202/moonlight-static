@@ -79,6 +79,8 @@ export class Stream {
         this.iceServers = null;
         this.videoRenderer = null;
         this.audioPlayer = null;
+        this.dragOverHandler = (event) => this.onDragOver(event);
+        this.dropHandler = (event) => this.onDrop(event);
         this.transport = null;
         // -- Raw Web Socket stuff
         this.wsSendBuffer = [];
@@ -89,6 +91,8 @@ export class Stream {
         this.hostId = hostId;
         this.appId = appId;
         this.settings = settings;
+        this.hostUploadRelativeDir =
+            typeof settings.hostUploadRelativeDir === "string" ? settings.hostUploadRelativeDir : "";
         this.streamerSize = getStreamerSize(settings, viewerScreenSize);
         // Configure web socket
         const wsApiHost = api.host_url.replace(/^http(s)?:/, "ws$1:");
@@ -114,6 +118,115 @@ export class Stream {
         this.input = new StreamInput(streamInputConfig);
         // Stream Stats
         this.stats = new StreamStats();
+        this.setupFileDropUpload();
+    }
+    setupFileDropUpload() {
+        this.divElement.addEventListener("dragover", this.dragOverHandler);
+        this.divElement.addEventListener("drop", this.dropHandler);
+    }
+    onDragOver(event) {
+        event.preventDefault();
+    }
+    onDrop(event) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            event.preventDefault();
+            const files = (_a = event.dataTransfer) === null || _a === void 0 ? void 0 : _a.files;
+            if (!files || files.length == 0) {
+                return;
+            }
+            // Upload only the first file for now
+            yield this.uploadFileToHost(files[0]);
+        });
+    }
+    emitFileTransferProgress(percent, loaded, total, source = "file") {
+        const detail = { type: "fileTransferProgress", percent, source };
+        if (loaded !== undefined)
+            detail.loaded = loaded;
+        if (total !== undefined)
+            detail.total = total;
+        const event = new CustomEvent("stream-info", { detail });
+        this.eventTarget.dispatchEvent(event);
+    }
+    emitFileTransferProgressEnd(source = "file") {
+        const event = new CustomEvent("stream-info", {
+            detail: { type: "fileTransferProgressEnd", source },
+        });
+        this.eventTarget.dispatchEvent(event);
+    }
+    /**
+     * POST raw body to /host/upload or /host/clipboard with the same XHR progress path as file upload.
+     */
+    postHostPayloadWithProgress(path, body, source, options) {
+        const total = body.size;
+        return new Promise((resolve, reject) => {
+            this.emitFileTransferProgress(0, 0, total, source);
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", `${this.api.host_url}${path}`);
+            if (this.api.bearer) {
+                xhr.setRequestHeader("Authorization", `Bearer ${this.api.bearer}`);
+            }
+            if (path === "/host/clipboard") {
+                xhr.setRequestHeader("Content-Type", "text/plain;charset=UTF-8");
+            }
+            if (options.extraHeaders) {
+                const extra = options.extraHeaders;
+                for (const k of Object.keys(extra)) {
+                    xhr.setRequestHeader(k, extra[k]);
+                }
+            }
+            xhr.upload.onprogress = (event) => {
+                if (!event.lengthComputable) {
+                    return;
+                }
+                const percent = Math.round((event.loaded / event.total) * 100);
+                this.emitFileTransferProgress(percent, event.loaded, event.total, source);
+                const tag = source === "clipboard" ? "[Clipboard]" : "[Upload]";
+                this.debugLog(`${tag} ${options.logLabel}: ${percent}% (${event.loaded}/${event.total} B)`);
+            };
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    this.emitFileTransferProgress(100, total, total, source);
+                    this.debugLog(`${source === "clipboard" ? "[Clipboard]" : "[Upload]"} Completed: ${options.logLabel}`);
+                    resolve();
+                }
+                else {
+                    this.emitFileTransferProgressEnd(source);
+                    this.debugLog(`${source === "clipboard" ? "[Clipboard]" : "[Upload]"} Failed (${xhr.status}): ${options.logLabel}`);
+                    reject(new Error(`POST ${path} failed with status ${xhr.status}`));
+                }
+            };
+            xhr.onerror = () => {
+                this.emitFileTransferProgressEnd(source);
+                this.debugLog(`${source === "clipboard" ? "[Clipboard]" : "[Upload]"} Network error: ${options.logLabel}`);
+                reject(new Error(`POST ${path} network error`));
+            };
+            xhr.send(body);
+        });
+    }
+    /** Upload one file to the host (drag/drop, paste from file clipboard, etc.). */
+    uploadFileToHost(file) {
+        const extraHeaders = {
+            "X-File-Name": encodeURIComponent(file.name),
+        };
+        const dir = this.hostUploadRelativeDir.trim();
+        if (dir.length > 0) {
+            extraHeaders["X-Host-Relative-Dir"] = encodeURIComponent(dir);
+        }
+        return this.postHostPayloadWithProgress("/host/upload", file, "file", {
+            logLabel: file.name,
+            extraHeaders,
+        });
+    }
+    /**
+     * Optional: write plain text to moonlight-clipboard-sync.txt on the host (HTTP).
+     * Not used for normal paste — use Ctrl/Cmd+Shift+V in the viewer to send clipboard text to the host.
+     */
+    syncClipboardToHost(text) {
+        const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+        return this.postHostPayloadWithProgress("/host/clipboard", blob, "clipboard", {
+            logLabel: "text to host",
+        });
     }
     debugLog(message, additional) {
         for (const line of message.split("\n")) {
@@ -218,6 +331,7 @@ export class Stream {
     startConnection() {
         return __awaiter(this, void 0, void 0, function* () {
             this.debugLog(`Using transport: ${this.settings.dataTransport}`);
+            this.resetKeyboardState("before connection start");
             if (this.settings.dataTransport == "auto") {
                 let shutdownReason = yield this.tryWebRTCTransport();
                 if (shutdownReason == "failednoconnect") {
@@ -234,13 +348,34 @@ export class Stream {
             this.debugLog("Tried all configured transport options but no connection was possible", { type: "fatal" });
         });
     }
+    resetKeyboardState(reason) {
+        this.debugLog(`[Keyboard] Resetting keyboard state (${reason})`);
+        this.input.onInputContextLost();
+    }
     setTransport(transport) {
         if (this.transport) {
+            this.resetKeyboardState("before transport switch");
             this.transport.close();
         }
         this.transport = transport;
+        this.resetKeyboardState("after transport switch");
         this.input.setTransport(this.transport);
         this.stats.setTransport(this.transport);
+        if (transport instanceof WebRTCTransport) {
+            transport.onFileTransferProgress = (_direction, _fileName, progressPercent) => {
+                this.emitFileTransferProgress(progressPercent);
+            };
+            transport.onFileReceived = (fileName, blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = fileName;
+                a.rel = "noopener";
+                a.click();
+                URL.revokeObjectURL(url);
+                this.emitFileTransferProgressEnd();
+            };
+        }
         const rtt = this.transport.getChannel(TransportChannelId.RTT);
         if (rtt.type == "data") {
             rtt.addReceiveListener((data) => {
@@ -348,13 +483,17 @@ export class Stream {
             const transport = new WebRTCTransport(this.logger);
             transport.onsendmessage = (message) => this.sendWsMessage({ WebRtc: message });
             transport.initPeer({
-                iceServers: this.iceServers
+                iceServers: this.iceServers,
+                iceTransportPolicy: "relay",
             });
             this.setTransport(transport);
             // Wait for negotiation
             const result = yield (new Promise((resolve, _reject) => {
                 transport.onconnect = () => resolve(true);
-                transport.onclose = () => resolve(false);
+                transport.onclose = () => {
+                    this.resetKeyboardState("transport closed during negotiation");
+                    resolve(false);
+                };
             }));
             this.debugLog(`WebRTC negotiation success: ${result}`);
             if (!result) {
@@ -378,6 +517,7 @@ export class Stream {
             yield this.startStream(videoCodecSupport);
             return new Promise((resolve, reject) => {
                 transport.onclose = (shutdown) => {
+                    this.resetKeyboardState(`transport closed (${shutdown})`);
                     resolve(shutdown);
                 };
             });
@@ -399,6 +539,7 @@ export class Stream {
             yield this.startStream(videoCodecSupport);
             return new Promise((resolve, reject) => {
                 transport.onclose = (shutdown) => {
+                    this.resetKeyboardState(`transport closed (${shutdown})`);
                     resolve(shutdown);
                 };
             });
@@ -542,6 +683,7 @@ export class Stream {
     startStream(videoCodecSupport) {
         return __awaiter(this, void 0, void 0, function* () {
             var _a;
+            this.resetKeyboardState("before stream start");
             const message = {
                 StartStream: {
                     bitrate: this.settings.bitrate,
@@ -575,6 +717,9 @@ export class Stream {
         parent.appendChild(this.divElement);
     }
     unmount(parent) {
+        this.resetKeyboardState("stream unmount");
+        this.divElement.removeEventListener("dragover", this.dragOverHandler);
+        this.divElement.removeEventListener("drop", this.dropHandler);
         parent.removeChild(this.divElement);
     }
     getVideoRenderer() {
@@ -591,9 +736,11 @@ export class Stream {
     }
     onWsClose() {
         this.debugLog(`Web Socket Closed`);
+        this.resetKeyboardState("websocket closed");
     }
     onError(event) {
         this.debugLog(`Web Socket or WebRtcPeer Error`);
+        this.resetKeyboardState("transport error");
         console.error(`Web Socket or WebRtcPeer Error`, event);
     }
     sendWsMessage(message) {
@@ -613,6 +760,7 @@ export class Stream {
         }
     }
     stop() {
+        this.resetKeyboardState("before stream stop");
         if (!this.sendGeneralMessage("Stop")) {
             return Promise.resolve(false);
         }

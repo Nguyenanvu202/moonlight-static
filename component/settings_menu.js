@@ -51,7 +51,7 @@ export function setLocalStreamSettings(settings) {
 }
 export class StreamSettingsComponent {
     constructor(settings) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
         this.divElement = document.createElement("div");
         this.sidebarHeader = document.createElement("h2");
         this.streamHeader = document.createElement("h2");
@@ -59,6 +59,7 @@ export class StreamSettingsComponent {
         this.mouseHeader = document.createElement("h2");
         this.controllerHeader = document.createElement("h2");
         this.otherHeader = document.createElement("h2");
+        this.hostUploadHeader = document.createElement("h2");
         const defaultSettings_ = defaultSettings();
         // Root div
         this.divElement.classList.add("settings");
@@ -300,6 +301,16 @@ export class StreamSettingsComponent {
         });
         this.useSelectElementPolyfill.addChangeListener(this.onSettingsChange.bind(this));
         this.useSelectElementPolyfill.mount(this.otherSection);
+        this.hostUploadHeader.innerText = "Host file upload (paste / drag-drop)";
+        this.otherSection.appendChild(this.hostUploadHeader);
+        this.hostUploadRelativeDir = new InputComponent("hostUploadRelativeDir", "text", "Host upload folder", {
+            defaultValue: "",
+            value: (_s = (_r = settings === null || settings === void 0 ? void 0 : settings.hostUploadRelativeDir) !== null && _r !== void 0 ? _r : defaultSettings_.hostUploadRelativeDir) !== null && _s !== void 0 ? _s : "",
+            placeholer: "Desktop",
+        });
+        this.hostUploadRelativeDir.addChangeListener(this.onSettingsChange.bind(this));
+        this.hostUploadRelativeDir.mount(this.otherSection);
+
         this.divElement.appendChild(this.otherSection);
         this.onSettingsChange();
     }
@@ -371,6 +382,7 @@ export class StreamSettingsComponent {
         settings.pageStyle = this.pageStyle.getValue();
         settings.hdr = this.hdr.isChecked();
         settings.useSelectElementPolyfill = this.useSelectElementPolyfill.isChecked();
+        settings.hostUploadRelativeDir = this.hostUploadRelativeDir.getValue().trim();
         return settings;
     }
     mount(parent) {

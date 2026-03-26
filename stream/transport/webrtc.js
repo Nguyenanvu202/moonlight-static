@@ -14,6 +14,13 @@ export class WebRTCTransport {
     constructor(logger) {
         this.implementationName = "webrtc";
         this.peer = null;
+        this.fileTransferChannel = null;
+        this.onFileTransferProgress = null;
+        this.onFileReceived = null;
+        // Prevent renegotiation spam: track whether a negotiation is already in progress
+        this.isNegotiating = false;
+        this.FILE_TRANSFER_CHUNK_SIZE = 16 * 1024;
+        this.FILE_TRANSFER_BUFFERED_LIMIT = 500000;
         this.onsendmessage = null;
         this.remoteDescription = null;
         this.iceCandidates = [];
@@ -28,14 +35,26 @@ export class WebRTCTransport {
     }
     initPeer(configuration) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
+            var _a, _b, _c;
             (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Creating Client Peer`);
             if (this.peer) {
                 (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug(`Cannot create Peer because a Peer already exists`);
                 return;
             }
-            // Configure web rtc
-            this.peer = new RTCPeerConnection(configuration);
+            // Configure WebRTC, forcing relay-only before any channels are created
+            const baseConfig = configuration ? Object.assign({}, configuration) : {};
+            // Filter ICE servers to TURN-only so no host/srflx candidates are discovered
+            if (baseConfig.iceServers) {
+                const before = baseConfig.iceServers.length;
+                baseConfig.iceServers = baseConfig.iceServers.filter(server => {
+                    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+                    return urls.some(url => typeof url === "string" && (url.startsWith("turn:") || url.startsWith("turns:")));
+                });
+                (_c = this.logger) === null || _c === void 0 ? void 0 : _c.debug(`Filtered ICE servers for relay-only: ${before} -> ${baseConfig.iceServers.length}`);
+            }
+            // Enforce relay at the ICE policy level
+            baseConfig.iceTransportPolicy = "relay";
+            this.peer = new RTCPeerConnection(baseConfig);
             this.peer.addEventListener("error", this.onError.bind(this));
             this.peer.addEventListener("negotiationneeded", this.onNegotiationNeeded.bind(this));
             this.peer.addEventListener("icecandidate", this.onIceCandidate.bind(this));
@@ -45,6 +64,8 @@ export class WebRTCTransport {
             this.peer.addEventListener("icegatheringstatechange", this.onIceGatheringStateChange.bind(this));
             this.peer.addEventListener("track", this.onTrack.bind(this));
             this.peer.addEventListener("datachannel", this.onDataChannel.bind(this));
+            // Dedicated file transfer channel on the existing streaming peer
+            this.fileTransferChannel = this.setupFileSender(this.peer);
             this.initChannels();
             // Maybe we already received data
             if (this.remoteDescription) {
@@ -54,6 +75,120 @@ export class WebRTCTransport {
                 yield this.onNegotiationNeeded();
             }
             yield this.tryDequeueIceCandidates();
+        });
+    }
+    // setupFileSender(pc): create sender-side channel
+    setupFileSender(pc) {
+        const dc = pc.createDataChannel("fileTransfer", {
+            ordered: true
+        });
+        dc.binaryType = "arraybuffer";
+        dc.bufferedAmountLowThreshold = this.FILE_TRANSFER_BUFFERED_LIMIT / 2;
+        dc.addEventListener("open", () => {
+            var _a;
+            (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug("fileTransfer channel open");
+        });
+        dc.addEventListener("close", () => {
+            var _a;
+            (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug("fileTransfer channel closed");
+        });
+        dc.addEventListener("error", (event) => {
+            var _a;
+            (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`fileTransfer channel error: ${event}`);
+        });
+        return dc;
+    }
+    // setupFileReceiver(dc): receiver-side chunk reassembly
+    setupFileReceiver(dc) {
+        dc.binaryType = "arraybuffer";
+        let expectedFileName = "";
+        let expectedFileSize = 0;
+        let receivedBytes = 0;
+        let chunks = [];
+        dc.addEventListener("message", (event) => {
+            var _a, _b, _c, _d, _e, _f;
+            if (typeof event.data === "string") {
+                try {
+                    const meta = JSON.parse(event.data);
+                    if (meta.type === "file-meta" && typeof meta.name === "string" && typeof meta.size === "number") {
+                        expectedFileName = meta.name;
+                        expectedFileSize = meta.size;
+                        receivedBytes = 0;
+                        chunks = [];
+                        (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Receiving file over DataChannel: ${expectedFileName} (${expectedFileSize} bytes)`);
+                    }
+                }
+                catch (_g) {
+                    (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug("fileTransfer received invalid metadata JSON");
+                }
+                return;
+            }
+            if (!(event.data instanceof ArrayBuffer) || expectedFileSize <= 0) {
+                return;
+            }
+            chunks.push(event.data);
+            receivedBytes += event.data.byteLength;
+            const progress = Math.min(100, Math.round((receivedBytes / expectedFileSize) * 100));
+            (_c = this.onFileTransferProgress) === null || _c === void 0 ? void 0 : _c.call(this, "receive", expectedFileName, progress);
+            (_d = this.logger) === null || _d === void 0 ? void 0 : _d.debug(`fileTransfer receive progress: ${expectedFileName} ${progress}% (${receivedBytes}/${expectedFileSize})`);
+            if (receivedBytes >= expectedFileSize) {
+                const file = new Blob(chunks);
+                (_e = this.logger) === null || _e === void 0 ? void 0 : _e.debug(`fileTransfer receive complete: ${expectedFileName} (${receivedBytes} bytes)`);
+                (_f = this.onFileReceived) === null || _f === void 0 ? void 0 : _f.call(this, expectedFileName, file);
+                // reset receiver state for next file
+                expectedFileName = "";
+                expectedFileSize = 0;
+                receivedBytes = 0;
+                chunks = [];
+            }
+        });
+    }
+    readFileSlice(file, start, end) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = () => reject(reader.error);
+                reader.onload = () => resolve(reader.result);
+                reader.readAsArrayBuffer(file.slice(start, end));
+            });
+        });
+    }
+    sleep(ms) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        });
+    }
+    // Public API for sending a file over fileTransfer DataChannel
+    sendFile(file) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c;
+            const dc = this.fileTransferChannel;
+            if (!dc || dc.readyState !== "open") {
+                throw new Error("fileTransfer DataChannel is not open");
+            }
+            const metadata = JSON.stringify({
+                type: "file-meta",
+                name: file.name,
+                size: file.size
+            });
+            dc.send(metadata);
+            let sentBytes = 0;
+            while (sentBytes < file.size) {
+                while (dc.bufferedAmount > this.FILE_TRANSFER_BUFFERED_LIMIT) {
+                    // Backpressure control to protect stream quality
+                    yield this.sleep(10);
+                }
+                const nextEnd = Math.min(sentBytes + this.FILE_TRANSFER_CHUNK_SIZE, file.size);
+                const chunk = yield this.readFileSlice(file, sentBytes, nextEnd);
+                dc.send(chunk);
+                sentBytes = nextEnd;
+                const progress = Math.min(100, Math.round((sentBytes / file.size) * 100));
+                (_a = this.onFileTransferProgress) === null || _a === void 0 ? void 0 : _a.call(this, "send", file.name, progress);
+                (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug(`fileTransfer send progress: ${file.name} ${progress}% (${sentBytes}/${file.size})`);
+                // Small pacing delay to avoid media starvation when network is tight
+                yield this.sleep(1);
+            }
+            (_c = this.logger) === null || _c === void 0 ? void 0 : _c.debug(`fileTransfer send complete: ${file.name} (${file.size} bytes)`);
         });
     }
     onError(event) {
@@ -92,30 +227,45 @@ export class WebRTCTransport {
     }
     onNegotiationNeeded() {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e, _f;
             // We're polite
             if (!this.peer) {
                 (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug("OnNegotiationNeeded without a peer");
                 return;
             }
-            yield this.peer.setLocalDescription();
-            const localDescription = this.peer.localDescription;
-            if (!localDescription) {
-                (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug("Failed to set local description in OnNegotiationNeeded");
+            // Avoid renegotiation spam: only allow one negotiation at a time
+            if (this.isNegotiating || this.peer.signalingState !== "stable") {
+                (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug(`OnNegotiationNeeded ignored because negotiation is already in progress or signalingState=${this.peer.signalingState}`);
                 return;
             }
-            (_c = this.logger) === null || _c === void 0 ? void 0 : _c.debug(`OnNegotiationNeeded: Sending local description: ${localDescription.type}`);
-            this.sendMessage({
-                Description: {
-                    ty: localDescription.type,
-                    sdp: (_d = localDescription.sdp) !== null && _d !== void 0 ? _d : ""
+            this.isNegotiating = true;
+            try {
+                yield this.peer.setLocalDescription();
+                const localDescription = this.peer.localDescription;
+                if (!localDescription) {
+                    (_c = this.logger) === null || _c === void 0 ? void 0 : _c.debug("Failed to set local description in OnNegotiationNeeded");
+                    return;
                 }
-            });
+                // Enforce relay-only candidates and prioritize relay at SDP level
+                const mungedSdp = this.enforceRelayInSdp((_d = localDescription.sdp) !== null && _d !== void 0 ? _d : "");
+                (_e = this.logger) === null || _e === void 0 ? void 0 : _e.debug(`OnNegotiationNeeded: Sending local description (relay-only): ${localDescription.type}`);
+                this.sendMessage({
+                    Description: {
+                        ty: localDescription.type,
+                        sdp: mungedSdp
+                    }
+                });
+            }
+            catch (err) {
+                (_f = this.logger) === null || _f === void 0 ? void 0 : _f.debug(`OnNegotiationNeeded failed: ${err}`);
+                // In case of error, clear negotiation flag so we can recover
+                this.isNegotiating = false;
+            }
         });
     }
     handleRemoteDescription(sdp) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
+            var _a, _b, _c, _d, _e;
             (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Received remote description: ${sdp === null || sdp === void 0 ? void 0 : sdp.type}`);
             const remoteDescription = sdp;
             this.remoteDescription = remoteDescription;
@@ -124,42 +274,94 @@ export class WebRTCTransport {
             }
             this.remoteDescription = null;
             if (remoteDescription) {
-                yield this.peer.setRemoteDescription(remoteDescription);
-                if (remoteDescription.type == "offer") {
-                    yield this.peer.setLocalDescription();
-                    const localDescription = this.peer.localDescription;
-                    if (!localDescription) {
-                        (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug("Peer didn't have a localDescription whilst receiving an offer and trying to answer");
-                        return;
-                    }
-                    (_c = this.logger) === null || _c === void 0 ? void 0 : _c.debug(`Responding to offer description: ${localDescription.type}`);
-                    this.sendMessage({
-                        Description: {
-                            ty: localDescription.type,
-                            sdp: (_d = localDescription.sdp) !== null && _d !== void 0 ? _d : ""
+                try {
+                    // Remote description handling is part of negotiation; mark as negotiating to
+                    // avoid conflicting local renegotiations until we reach a stable state again.
+                    this.isNegotiating = true;
+                    yield this.peer.setRemoteDescription(remoteDescription);
+                    if (remoteDescription.type == "offer") {
+                        yield this.peer.setLocalDescription();
+                        const localDescription = this.peer.localDescription;
+                        if (!localDescription) {
+                            (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug("Peer didn't have a localDescription whilst receiving an offer and trying to answer");
+                            return;
                         }
-                    });
+                        // Enforce relay-only candidates and prioritize relay at SDP level for the answer
+                        const mungedSdp = this.enforceRelayInSdp((_c = localDescription.sdp) !== null && _c !== void 0 ? _c : "");
+                        (_d = this.logger) === null || _d === void 0 ? void 0 : _d.debug(`Responding to offer description (relay-only): ${localDescription.type}`);
+                        this.sendMessage({
+                            Description: {
+                                ty: localDescription.type,
+                                sdp: mungedSdp
+                            }
+                        });
+                    }
+                }
+                catch (err) {
+                    (_e = this.logger) === null || _e === void 0 ? void 0 : _e.debug(`handleRemoteDescription failed: ${err}`);
+                    // On error, clear negotiation flag so we can recover
+                    this.isNegotiating = false;
                 }
             }
         });
     }
     onIceCandidate(event) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         if (event.candidate) {
             const candidate = event.candidate.toJSON();
-            (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Sending ice candidate: ${candidate.candidate}`);
+            // Enforce relay: drop non-relay candidates at the trickle ICE level
+            if (candidate.candidate && !candidate.candidate.includes(" typ relay")) {
+                (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Dropping non-relay ICE candidate: ${candidate.candidate}`);
+                return;
+            }
+            // Optionally, bump relay candidate priority to be highest
+            if (candidate.candidate) {
+                const tokens = candidate.candidate.split(" ");
+                // candidate:<id> <component> <protocol> <priority> ...
+                if (tokens.length > 3) {
+                    // Use a very high constant for relay priority
+                    tokens[3] = "2114000000";
+                    candidate.candidate = tokens.join(" ");
+                }
+            }
+            (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug(`Sending relay ICE candidate: ${candidate.candidate}`);
             this.sendMessage({
                 AddIceCandidate: {
-                    candidate: (_b = candidate.candidate) !== null && _b !== void 0 ? _b : "",
-                    sdp_mid: (_c = candidate.sdpMid) !== null && _c !== void 0 ? _c : null,
-                    sdp_mline_index: (_d = candidate.sdpMLineIndex) !== null && _d !== void 0 ? _d : null,
-                    username_fragment: (_e = candidate.usernameFragment) !== null && _e !== void 0 ? _e : null
+                    candidate: (_c = candidate.candidate) !== null && _c !== void 0 ? _c : "",
+                    sdp_mid: (_d = candidate.sdpMid) !== null && _d !== void 0 ? _d : null,
+                    sdp_mline_index: (_e = candidate.sdpMLineIndex) !== null && _e !== void 0 ? _e : null,
+                    username_fragment: (_f = candidate.usernameFragment) !== null && _f !== void 0 ? _f : null
                 }
             });
         }
         else {
-            (_f = this.logger) === null || _f === void 0 ? void 0 : _f.debug("No new ice candidates");
+            (_g = this.logger) === null || _g === void 0 ? void 0 : _g.debug("No new ice candidates");
         }
+    }
+    // SDP munging helper: keep only relay candidates and ensure relay-first priority
+    enforceRelayInSdp(sdp) {
+        if (!sdp) {
+            return sdp;
+        }
+        const lines = sdp.split(/\r\n|\n/);
+        const newLines = [];
+        for (const line of lines) {
+            if (!line.startsWith("a=candidate:")) {
+                newLines.push(line);
+                continue;
+            }
+            // Only keep relay candidates
+            if (!line.includes(" typ relay")) {
+                continue;
+            }
+            const tokens = line.split(" ");
+            if (tokens.length > 3) {
+                // tokens[3] is the priority field
+                tokens[3] = "2114000000";
+            }
+            newLines.push(tokens.join(" "));
+        }
+        return newLines.join("\r\n");
     }
     addIceCandidate(candidate) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -198,6 +400,11 @@ export class WebRTCTransport {
             type = "recover";
             if (this.onconnect) {
                 this.onconnect();
+                // Log selected ICE candidate pair details once the connection is established
+                this.logSelectedCandidatePairDetails().catch(err => {
+                    var _a;
+                    (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Failed to log ICE candidate pair details: ${err}`);
+                });
             }
             this.wasConnected = true;
         }
@@ -218,6 +425,75 @@ export class WebRTCTransport {
             type: type !== null && type !== void 0 ? type : undefined
         });
     }
+    // Log detailed information about the selected ICE candidate pair
+    logSelectedCandidatePairDetails() {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b, _c, _d, _e;
+            if (!this.peer) {
+                return;
+            }
+            try {
+                const stats = yield this.peer.getStats();
+                let selectedPair = null;
+                const localCandidates = {};
+                const remoteCandidates = {};
+                for (const [, value] of stats.entries()) {
+                    if (value.type === "candidate-pair" && value.nominated) {
+                        // Prefer succeeded but fall back to any nominated pair
+                        if (!selectedPair || (selectedPair.state !== "succeeded" && value.state === "succeeded")) {
+                            selectedPair = value;
+                        }
+                    }
+                    else if (value.type === "local-candidate") {
+                        localCandidates[value.id] = value;
+                    }
+                    else if (value.type === "remote-candidate") {
+                        remoteCandidates[value.id] = value;
+                    }
+                }
+                if (!selectedPair) {
+                    (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug("No nominated ICE candidate pair found in stats");
+                    return;
+                }
+                const local = localCandidates[selectedPair.localCandidateId];
+                const remote = remoteCandidates[selectedPair.remoteCandidateId];
+                const details = {
+                    pair: {
+                        id: selectedPair.id,
+                        state: selectedPair.state,
+                        nominated: selectedPair.nominated,
+                        bytesSent: selectedPair.bytesSent,
+                        bytesReceived: selectedPair.bytesReceived,
+                        currentRoundTripTime: selectedPair.currentRoundTripTime,
+                    },
+                    localCandidate: local && {
+                        id: local.id,
+                        address: (_b = local.ip) !== null && _b !== void 0 ? _b : local.address,
+                        port: local.port,
+                        protocol: local.protocol,
+                        candidateType: local.candidateType,
+                        networkType: local.networkType,
+                        relayProtocol: local.relayProtocol,
+                        url: local.url,
+                    },
+                    remoteCandidate: remote && {
+                        id: remote.id,
+                        address: (_c = remote.ip) !== null && _c !== void 0 ? _c : remote.address,
+                        port: remote.port,
+                        protocol: remote.protocol,
+                        candidateType: remote.candidateType,
+                        networkType: remote.networkType,
+                        relayProtocol: remote.relayProtocol,
+                        url: remote.url,
+                    }
+                };
+                (_d = this.logger) === null || _d === void 0 ? void 0 : _d.debug(`Selected ICE candidate pair: ${JSON.stringify(details)}`);
+            }
+            catch (err) {
+                (_e = this.logger) === null || _e === void 0 ? void 0 : _e.debug(`Error while collecting ICE candidate stats: ${err}`);
+            }
+        });
+    }
     onSignalingStateChange() {
         var _a, _b;
         if (!this.peer) {
@@ -225,6 +501,10 @@ export class WebRTCTransport {
             return;
         }
         (_b = this.logger) === null || _b === void 0 ? void 0 : _b.debug(`Changing Peer Signaling State to ${this.peer.signalingState}`);
+        // Once we return to a stable signaling state, allow new negotiations
+        if (this.peer.signalingState === "stable") {
+            this.isNegotiating = false;
+        }
     }
     onIceConnectionStateChange() {
         var _a, _b;
@@ -249,7 +529,7 @@ export class WebRTCTransport {
         }
     }
     initChannels() {
-        var _a, _b;
+        var _a, _b, _c;
         if (!this.peer) {
             (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug("Failed to initialize channel without peer");
             return;
@@ -261,6 +541,11 @@ export class WebRTCTransport {
         for (const channelRaw in TRANSPORT_CHANNEL_OPTIONS) {
             const channel = channelRaw;
             const options = TRANSPORT_CHANNEL_OPTIONS[channel];
+            // Channel not configured in our minimal set
+            if (!options) {
+                (_c = this.logger) === null || _c === void 0 ? void 0 : _c.debug(`Skipping unconfigured transport channel: ${channel}`);
+                continue;
+            }
             if (channel == "HOST_VIDEO") {
                 const channel = new WebRTCInboundTrackTransportChannel(this.logger, "videotrack", "video", this.videoTrackHolder);
                 this.channels[TransportChannelId.HOST_VIDEO] = channel;
@@ -315,6 +600,11 @@ export class WebRTCTransport {
         const remoteChannel = event.channel;
         const label = remoteChannel.label;
         (_a = this.logger) === null || _a === void 0 ? void 0 : _a.debug(`Received remote data channel: ${label}`);
+        if (label === "fileTransfer") {
+            this.fileTransferChannel = remoteChannel;
+            this.setupFileReceiver(remoteChannel);
+            return;
+        }
         // Map the channel label to the corresponding TransportChannelId
         const channelKey = label.toUpperCase();
         if (channelKey in TransportChannelId) {

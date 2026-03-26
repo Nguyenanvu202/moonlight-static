@@ -4,10 +4,10 @@ const trueDefaultSettings =
 {
     // possible values: "left", "right", "up", "down"
     "sidebarEdge": "left",
-    "bitrate": 30000,
-    "packetSize": 2048,
-    "fps": 70,
-    "videoFrameQueueSize": 3,
+    "bitrate": 6000,
+    "packetSize": 256,
+    "fps": 60,
+    "videoFrameQueueSize": 2,
     // possible values: "720p", "1080p", "1440p", "4k", "native", "custom"
     "videoSize": "custom",
     // only works if videoSize=custom
@@ -22,7 +22,7 @@ const trueDefaultSettings =
     // Canvas only: when true, draw only on requestAnimationFrame (stable, may add ~0–17 ms). When false, draw on frame submit (low latency).
     "canvasVsync": false,
     "playAudioLocal": false,
-    "audioSampleQueueSize": 20,
+    "audioSampleQueueSize": 6,
     // possible values: "highres", "normal"
     "mouseScrollMode": "highres",
     "controllerConfig": {
@@ -37,7 +37,8 @@ const trueDefaultSettings =
     // possible values: "standard", "old"
     "pageStyle": "standard",
     "hdr": false,
-    "useSelectElementPolyfill": false
+    "useSelectElementPolyfill": false,
+    "hostUploadRelativeDir": "Desktop"
 };
 function assignIfMissing(target, source) {
     for (const key in source) {

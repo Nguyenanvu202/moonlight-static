@@ -1,4 +1,4 @@
-import { StreamControllerCapabilities, StreamMouseButton, TransportChannelId } from "../api_bindings.js";
+import { StreamControllerCapabilities, StreamKeys, StreamMouseButton, TransportChannelId } from "../api_bindings.js";
 import { ByteBuffer, I16_MAX, U16_MAX, U8_MAX } from "./buffer.js";
 import { emptyGamepadState, extractGamepadState, SUPPORTED_BUTTONS } from "./gamepad.js";
 import { convertToKey, convertToModifiers } from "./keyboard.js";
@@ -7,14 +7,18 @@ import { convertToButton } from "./mouse.js";
 const TOUCH_HIGH_RES_SCROLL_MULTIPLIER = 10;
 // Normal scrolling multiplier
 const TOUCH_SCROLL_MULTIPLIER = 1;
-// Distance until a touch is 100% a click
-const TOUCH_AS_CLICK_MAX_DISTANCE = 30;
+// Distance until a touch cannot be a click anymore
+const TOUCH_AS_CLICK_MAX_DISTANCE = 2;
 // Time till it's registered as a click, else it might be scrolling
 const TOUCH_AS_CLICK_MIN_TIME_MS = 100;
 // Everything greater than this is a right click
-const TOUCH_AS_CLICK_MAX_TIME_MS = 300;
+const TOUCH_AS_CLICK_MAX_TIME_MS = 350;
 // How much to move to open up the screen keyboard when having three touches at the same time
 const TOUCHES_AS_KEYBOARD_DISTANCE = 100;
+// How long is the first tap allowed to be for it to maybe be a double tap
+const DOUBLE_TAP_FIRST_TAP_MAX_TIME_MS = 100;
+// How much time is allowed after a touch release for a new tap to count both taps as a double tap
+const DOUBLE_TAP_SECOND_TAP_MAX_TIME_MS = 200;
 const CONTROLLER_RUMBLE_INTERVAL_MS = 60;
 function trySendChannel(channel, buffer) {
     if (!channel) {
@@ -56,11 +60,26 @@ export class StreamInput {
         this.controllerInputs = [];
         this.touchSupported = null;
         // -- Keyboard
-        this.pressedKeys = new Set();
+        this.pressedByCode = new Map();
+        this.recentModifierState = null;
+        this.lastKeyboardEventAtMs = 0;
+        this.expectedCapsLockState = null;
+        this.inferredHostCapsLockState = null;
+        this.lastCapsLockSyncAtMs = 0;
         // -- Touch
         this.touchTracker = new Map();
+        // The current action of all touches on screen
+        // - default -> the default action for this touch mode / we're still trying to figure out what the user is trying to do
+        // - drag -> mouse is down and only relative movement is done
+        // - scroll -> we're currently scrolling using primary touch
+        // - screenKeyboard -> this current action is trying to pull up the on screen keyboard
         this.touchMouseAction = "default";
+        // The touch that is selected as the primary / controller of the action
+        // Used in touch mode "relative" and "pointAndDrag"
+        // E.g. scrolling movement
         this.primaryTouch = null;
+        // If the next touch is a double tap?
+        this.nextTouchDoubleTap = false;
         // -- Controller
         // Wait for stream to connect and then send controllers
         this.bufferedControllers = [];
@@ -114,6 +133,9 @@ export class StreamInput {
     getCapabilities() {
         return this.capabilities;
     }
+    isConnected() {
+        return this.connected;
+    }
     // -- External Event Listeners
     addScreenKeyboardVisibleEvent(listener) {
         this.eventTarget.addEventListener("ml-screenkeyboardvisible", listener);
@@ -124,12 +146,23 @@ export class StreamInput {
         this.capabilities = capabilities;
         this.streamerSize = streamerSize;
         this.registerBufferedControllers();
+        this.inferredHostCapsLockState = false;
+        this.sendReleaseAllKeys();
     }
     onKeyDown(event) {
         this.sendKeyEvent(true, event);
     }
     onKeyUp(event) {
         this.sendKeyEvent(false, event);
+    }
+    /** Send clipboard plain text to the host (same path as paste event text). */
+    pastePlainText(text) {
+        if (!text) {
+            return;
+        }
+        console.debug("PASTE TEXT", text);
+        this.raiseAllKeys();
+        this.sendText(text);
     }
     onPaste(event) {
         const data = event.clipboardData;
@@ -139,40 +172,171 @@ export class StreamInput {
         console.debug("PASTE", data);
         const text = data.getData("text/plain");
         if (text) {
-            console.debug("PASTE TEXT", text);
-            // Before sending text raise all keys
-            this.raiseAllKeys();
-            this.sendText(text);
+            this.pastePlainText(text);
         }
     }
     sendKeyEvent(isDown, event) {
+        var _a;
+        this.updateExpectedCapsLockState(event);
+        this.updateRecentModifierState(event);
         const key = convertToKey(event);
         if (key == null) {
             return;
         }
+        // Keep lock-state aligned before forwarding regular key events.
+        if (key !== StreamKeys.VK_CAPITAL) {
+            this.maybeSyncCapsLockState();
+        }
+        const code = event.code || `__vk_${key}`;
         if (isDown) {
-            if (this.pressedKeys.has(key)) {
+            if (event.repeat) {
+                console.debug("[Keyboard]: Ignoring repeated keydown", code, key);
                 return;
             }
-            this.pressedKeys.add(key);
+            if (this.pressedByCode.has(code)) {
+                return;
+            }
+            this.pressedByCode.set(code, {
+                vk: key,
+                modifiers: convertToModifiers(event),
+                isModifier: this.isModifierCode(code),
+            });
         }
         else {
-            if (!this.pressedKeys.has(key)) {
+            const pressedState = this.pressedByCode.get(code);
+            if (!pressedState) {
                 return;
             }
-            this.pressedKeys.delete(key);
+            this.pressedByCode.delete(code);
+            this.sendKey(false, pressedState.vk, pressedState.modifiers);
+            return;
         }
         const modifiers = convertToModifiers(event);
         if ("debug" in console) {
             console.debug(isDown ? "DOWN" : "UP", event.code, convertToKey(event), convertToModifiers(event).toString(16));
         }
         this.sendKey(isDown, key, modifiers);
+        // Keep a best-effort host-side lock state model for lock-key toggles.
+        if (key === StreamKeys.VK_CAPITAL && isDown) {
+            if (this.inferredHostCapsLockState == null) {
+                this.inferredHostCapsLockState = (_a = this.expectedCapsLockState) !== null && _a !== void 0 ? _a : null;
+            }
+            else {
+                this.inferredHostCapsLockState = !this.inferredHostCapsLockState;
+            }
+        }
     }
     raiseAllKeys() {
-        for (const key of this.pressedKeys) {
-            this.sendKey(false, key, 0);
+        for (const value of this.pressedByCode.values()) {
+            this.sendKey(false, value.vk, value.modifiers);
         }
-        this.pressedKeys.clear();
+        this.pressedByCode.clear();
+    }
+    sendReleaseAllKeys() {
+        this.buffer.reset();
+        this.buffer.putU8(2);
+        trySendChannel(this.keyboard, this.buffer);
+    }
+    resetAllKeys() {
+        this.raiseAllKeys();
+        this.sendReleaseAllKeys();
+    }
+    onInputContextLost() {
+        this.resetAllKeys();
+        // Host lock state may have changed while unfocused; force re-learning.
+        this.inferredHostCapsLockState = null;
+        this.lastCapsLockSyncAtMs = 0;
+    }
+    watchdogTick(shouldForceRelease) {
+        if (shouldForceRelease) {
+            this.resetAllKeys();
+            return;
+        }
+        if (this.pressedByCode.size == 0) {
+            return;
+        }
+        const now = Date.now();
+        const staleMs = now - this.lastKeyboardEventAtMs;
+        // Reconcile modifier keys against the last known browser modifier state.
+        if (this.recentModifierState && staleMs >= StreamInput.WATCHDOG_STALE_MODIFIER_GRACE_MS) {
+            for (const [code, pressed] of this.pressedByCode.entries()) {
+                if (!pressed.isModifier) {
+                    continue;
+                }
+                const isStillPressed = this.getModifierStateByCode(code, this.recentModifierState);
+                if (!isStillPressed) {
+                    this.sendKey(false, pressed.vk, pressed.modifiers);
+                    this.pressedByCode.delete(code);
+                }
+            }
+        }
+        // If a key has been held a long time without fresh keyboard activity, release it defensively.
+        if (staleMs >= StreamInput.WATCHDOG_STUCK_KEY_MS) {
+            this.resetAllKeys();
+        }
+    }
+    isModifierCode(code) {
+        return code.startsWith("Shift")
+            || code.startsWith("Control")
+            || code.startsWith("Alt")
+            || code.startsWith("Meta")
+            || code === "CapsLock";
+    }
+    getModifierStateByCode(code, state) {
+        if (code.startsWith("Shift")) {
+            return state.shift;
+        }
+        if (code.startsWith("Control")) {
+            return state.ctrl;
+        }
+        if (code.startsWith("Alt")) {
+            return state.alt;
+        }
+        if (code.startsWith("Meta")) {
+            return state.meta;
+        }
+        if (code === "CapsLock") {
+            return state.capsLock;
+        }
+        return true;
+    }
+    updateRecentModifierState(event) {
+        this.lastKeyboardEventAtMs = Date.now();
+        if (typeof event.getModifierState !== "function") {
+            return;
+        }
+        this.recentModifierState = {
+            shift: event.getModifierState("Shift"),
+            ctrl: event.getModifierState("Control"),
+            alt: event.getModifierState("Alt"),
+            meta: event.getModifierState("Meta"),
+            capsLock: event.getModifierState("CapsLock"),
+        };
+    }
+    updateExpectedCapsLockState(event) {
+        if (typeof event.getModifierState !== "function") {
+            return;
+        }
+        this.expectedCapsLockState = event.getModifierState("CapsLock");
+        if (this.inferredHostCapsLockState == null) {
+            this.inferredHostCapsLockState = this.expectedCapsLockState;
+        }
+    }
+    maybeSyncCapsLockState() {
+        if (this.expectedCapsLockState == null || this.inferredHostCapsLockState == null) {
+            return;
+        }
+        if (this.expectedCapsLockState === this.inferredHostCapsLockState) {
+            return;
+        }
+        const now = Date.now();
+        if (now - this.lastCapsLockSyncAtMs < StreamInput.CAPS_LOCK_SYNC_COOLDOWN_MS) {
+            return;
+        }
+        this.sendKey(true, StreamKeys.VK_CAPITAL, 0);
+        this.sendKey(false, StreamKeys.VK_CAPITAL, 0);
+        this.inferredHostCapsLockState = this.expectedCapsLockState;
+        this.lastCapsLockSyncAtMs = now;
     }
     // Note: key = StreamKeys.VK_, modifiers = StreamKeyModifiers.
     sendKey(isDown, key, modifiers) {
@@ -313,8 +477,8 @@ export class StreamInput {
                 originY: touch.clientY,
                 x: touch.clientX,
                 y: touch.clientY,
+                mouseClicked: null,
                 mouseMoved: false,
-                mouseClicked: false
             });
         }
         else {
@@ -343,16 +507,28 @@ export class StreamInput {
             }
         }
         else if (this.config.touchMode == "mouseRelative" || this.config.touchMode == "pointAndDrag") {
+            // Set primary touch if it doesn't exists currently
             for (const touch of event.changedTouches) {
                 if (this.primaryTouch == null) {
                     this.primaryTouch = touch.identifier;
                     this.touchMouseAction = "default";
                 }
             }
+            const primaryTouch = this.primaryTouch != null && this.touchTracker.get(this.primaryTouch);
+            // Detect dragging in mouse relative
+            if (this.config.touchMode == "mouseRelative" && primaryTouch && this.nextTouchDoubleTap) {
+                if (primaryTouch.mouseClicked == null) {
+                    this.sendMouseButton(true, StreamMouseButton.LEFT);
+                    primaryTouch.mouseClicked = StreamMouseButton.LEFT;
+                }
+                this.touchMouseAction = "drag";
+                this.nextTouchDoubleTap = false;
+            }
+            // Detect scrolling
             if (this.primaryTouch != null && this.touchTracker.size == 2) {
-                const primaryTouch = this.touchTracker.get(this.primaryTouch);
-                if (primaryTouch && !primaryTouch.mouseMoved && !primaryTouch.mouseClicked) {
+                if (primaryTouch && !primaryTouch.mouseMoved && primaryTouch.mouseClicked == null) {
                     this.touchMouseAction = "scroll";
+                    // only on point and drag: set the pointer in the middle of the two touches
                     if (this.config.touchMode == "pointAndDrag") {
                         let middleX = 0;
                         let middleY = 0;
@@ -368,6 +544,7 @@ export class StreamInput {
                     }
                 }
             }
+            // Detect on screen keyboard
             else if (this.touchTracker.size == 3) {
                 this.touchMouseAction = "screenKeyboard";
             }
@@ -404,23 +581,34 @@ export class StreamInput {
                 if (!oldTouch) {
                     continue;
                 }
-                // mouse move
                 const movementX = touch.clientX - oldTouch.x;
                 const movementY = touch.clientY - oldTouch.y;
                 if (this.touchMouseAction == "default") {
-                    this.sendMouseMoveClientCoordinates(movementX, movementY, rect);
-                    const distance = this.calcTouchOriginDistance(touch, oldTouch);
-                    if (this.config.touchMode == "pointAndDrag" && distance > TOUCH_AS_CLICK_MAX_DISTANCE) {
-                        if (!oldTouch.mouseMoved) {
-                            this.sendMousePositionClientCoordinates(touch.clientX, touch.clientY, rect, true);
+                    const touchOriginDistance = this.calcTouchOriginDistance(touch, oldTouch);
+                    // Normal mouse relative movement
+                    if (this.config.touchMode == "mouseRelative") {
+                        this.sendMouseMoveClientCoordinates(movementX, movementY, rect);
+                        if (touchOriginDistance > TOUCH_AS_CLICK_MAX_DISTANCE) {
                             oldTouch.mouseMoved = true;
                         }
-                        if (!oldTouch.mouseClicked) {
-                            this.sendMousePositionClientCoordinates(oldTouch.originX, oldTouch.originY, rect, true);
-                            this.sendMouseButton(true, StreamMouseButton.LEFT);
-                            oldTouch.mouseClicked = true;
-                        }
                     }
+                    // Point and Drag
+                    // If we are over the touch as click distance go to the origin and drag
+                    else if (this.config.touchMode == "pointAndDrag" && touchOriginDistance > TOUCH_AS_CLICK_MAX_DISTANCE) {
+                        if (!oldTouch.mouseMoved) {
+                            this.sendMousePositionClientCoordinates(oldTouch.originX, oldTouch.originY, rect, true);
+                            oldTouch.mouseMoved = true;
+                        }
+                        if (oldTouch.mouseClicked == null) {
+                            this.sendMouseButton(true, StreamMouseButton.LEFT);
+                            oldTouch.mouseClicked = StreamMouseButton.LEFT;
+                        }
+                        this.touchMouseAction = "drag";
+                    }
+                }
+                else if (this.touchMouseAction == "drag") {
+                    // Do the dragging
+                    this.sendMouseMoveClientCoordinates(movementX, movementY, rect);
                 }
                 else if (this.touchMouseAction == "scroll") {
                     // inverting horizontal scroll
@@ -432,6 +620,7 @@ export class StreamInput {
                     }
                 }
                 else if (this.touchMouseAction == "screenKeyboard") {
+                    // calculate if we should open the screen keyboard
                     const distanceY = touch.clientY - oldTouch.originY;
                     if (distanceY < -TOUCHES_AS_KEYBOARD_DISTANCE) {
                         const customEvent = new CustomEvent("ml-screenkeyboardvisible", {
@@ -466,28 +655,52 @@ export class StreamInput {
                 const oldTouch = this.touchTracker.get(this.primaryTouch);
                 this.primaryTouch = null;
                 if (oldTouch) {
-                    const time = this.calcTouchTime(oldTouch);
-                    const distance = this.calcTouchOriginDistance(touch, oldTouch);
-                    if (this.touchMouseAction == "default") {
-                        if (distance <= TOUCH_AS_CLICK_MAX_DISTANCE) {
-                            if (time <= TOUCH_AS_CLICK_MAX_TIME_MS || oldTouch.mouseClicked) {
-                                if (this.config.touchMode == "pointAndDrag" && !oldTouch.mouseMoved) {
-                                    this.sendMousePositionClientCoordinates(touch.clientX, touch.clientY, rect, true);
-                                }
-                                if (!oldTouch.mouseClicked) {
-                                    this.sendMouseButton(true, StreamMouseButton.LEFT);
-                                }
-                                this.sendMouseButton(false, StreamMouseButton.LEFT);
+                    const touchTime = this.calcTouchTime(oldTouch);
+                    const touchOriginDistance = this.calcTouchOriginDistance(touch, oldTouch);
+                    const maybeDoubleTap = touchTime < DOUBLE_TAP_FIRST_TAP_MAX_TIME_MS;
+                    // point and drag: Before making a click we should move the mouse to the position
+                    if (this.config.touchMode == "pointAndDrag" && !oldTouch.mouseMoved) {
+                        this.sendMousePositionClientCoordinates(touch.clientX, touch.clientY, rect, true);
+                    }
+                    const doClick = (maybeDoubleTap) => {
+                        // See if we should make a click
+                        if (touchOriginDistance < TOUCH_AS_CLICK_MAX_DISTANCE &&
+                            // mouse relative:
+                            // - when having moved the mouse we shouldn't allow a click
+                            // - when it's maybe a double click we shouldn't do a click
+                            !(this.config.mouseMode == "relative" && !oldTouch.mouseMoved) &&
+                            !maybeDoubleTap) {
+                            // Should we right or left click?
+                            let mouseButton;
+                            if (touchTime > TOUCH_AS_CLICK_MAX_TIME_MS) {
+                                mouseButton = StreamMouseButton.RIGHT;
                             }
                             else {
-                                this.sendMouseButton(true, StreamMouseButton.RIGHT);
-                                this.sendMouseButton(false, StreamMouseButton.RIGHT);
+                                mouseButton = StreamMouseButton.LEFT;
                             }
+                            this.sendMouseButton(true, mouseButton);
+                            oldTouch.mouseClicked = mouseButton;
                         }
-                        else if (this.config.touchMode == "pointAndDrag") {
-                            this.sendMouseButton(true, StreamMouseButton.LEFT);
-                            this.sendMouseButton(false, StreamMouseButton.LEFT);
+                        // Reset mouse click to neutral
+                        if (oldTouch.mouseClicked != null) {
+                            this.sendMouseButton(false, oldTouch.mouseClicked);
                         }
+                    };
+                    doClick(maybeDoubleTap);
+                    if (maybeDoubleTap) {
+                        this.nextTouchDoubleTap = true;
+                        // Schedule the click if it's not a double tap
+                        setTimeout(() => {
+                            if (this.primaryTouch == null) {
+                                // no click present -> no double click -> We need to do the actual click
+                                doClick(false);
+                                // it cannot be a double tap
+                                this.nextTouchDoubleTap = false;
+                            }
+                        }, DOUBLE_TAP_SECOND_TAP_MAX_TIME_MS);
+                    }
+                    else {
+                        this.nextTouchDoubleTap = false;
                     }
                 }
             }
@@ -783,3 +996,6 @@ export class StreamInput {
         trySendChannel(this.controllerInputs[id], this.buffer);
     }
 }
+StreamInput.CAPS_LOCK_SYNC_COOLDOWN_MS = 400;
+StreamInput.WATCHDOG_STALE_MODIFIER_GRACE_MS = 350;
+StreamInput.WATCHDOG_STUCK_KEY_MS = 5000;

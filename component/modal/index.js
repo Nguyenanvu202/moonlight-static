@@ -31,6 +31,7 @@ export function showModal(modal) {
         }
         if (modalAbort != null) {
             modalBackground === null || modalBackground === void 0 ? void 0 : modalBackground.classList.add("modal-disabled");
+            window.dispatchEvent(new CustomEvent("ml-modal-visibility", { detail: { visible: false } }));
             modalAbort.abort();
             modalAbort = null;
         }
@@ -45,8 +46,10 @@ export function showModal(modal) {
         modalAbort = abortController;
         modal.mount(modalParent);
         modalBackground === null || modalBackground === void 0 ? void 0 : modalBackground.classList.remove("modal-disabled");
+        window.dispatchEvent(new CustomEvent("ml-modal-visibility", { detail: { visible: true } }));
         const output = yield modal.onFinish(abortController.signal);
         modalBackground === null || modalBackground === void 0 ? void 0 : modalBackground.classList.add("modal-disabled");
+        window.dispatchEvent(new CustomEvent("ml-modal-visibility", { detail: { visible: false } }));
         modalAbort.abort();
         modalAbort = null;
         return output;
