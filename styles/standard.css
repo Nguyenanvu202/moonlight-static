@@ -1225,8 +1225,14 @@ input[type=number] {
 /** Sidebar */
 .sidebar-overlay {
     position: fixed;
-    z-index: 1;
+    z-index: 2000;
     pointer-events: none;
+}
+
+/* Hide sidebar icon/panel while Settings modal is open. */
+.sidebar-overlay.sidebar-settings-hidden {
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
 .sidebar-background {
@@ -1291,6 +1297,19 @@ input[type=number] {
     transform: translate(-50%, 0);
 }
 
+/* Keep panel hidden until arrow click toggles sidebar-show. */
+.sidebar-overlay:not(.sidebar-show) #sidebar-parent {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.sidebar-overlay.sidebar-show #sidebar-parent {
+    visibility: visible;
+    pointer-events: all;
+    opacity: 1;
+}
+
 .sidebar-button-panel {
     display: flex;
     align-items: center;
@@ -1299,6 +1318,21 @@ input[type=number] {
     height: 48px;
     flex-shrink: 0;
     cursor: pointer;
+}
+.sidebar-arrow-panel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: rgba(10, 10, 10, 0.9);
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+#sidebar-button:hover .sidebar-arrow-panel {
+    transform: scale(1.08);
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.18);
 }
 .sidebar-button-panel .sidebar-button-image {
     width: 20px;
