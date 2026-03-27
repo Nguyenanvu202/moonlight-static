@@ -1757,6 +1757,7 @@ class ViewerSidebar {
     constructor(app) {
         this.app = app;
         this.selectedMode = null; // null | "pc" | "phone"
+        this.uploadDoneAnnouncementHideTimer = null;
         this.div = document.createElement("div");
         this.div.classList.add("sidebar-stream");
         this.screenKeyboard = new ScreenKeyboard();
@@ -1764,6 +1765,25 @@ class ViewerSidebar {
         this.screenKeyboard.addKeyUpListener(this.onKeyUp.bind(this));
         this.screenKeyboard.addTextListener(this.onText.bind(this));
         this.div.appendChild(this.screenKeyboard.getHiddenElement());
+        this.uploadDoneAnnouncementButton = document.createElement("button");
+        this.uploadDoneAnnouncementButton.classList.add("upload-done-announcement");
+        this.uploadDoneAnnouncementButton.type = "button";
+        this.uploadDoneAnnouncementTitle = document.createElement("span");
+        this.uploadDoneAnnouncementTitle.classList.add("upload-done-announcement-title");
+        this.uploadDoneAnnouncementTitle.textContent = "NextGPU announces";
+        this.uploadDoneAnnouncementMessage = document.createElement("span");
+        this.uploadDoneAnnouncementMessage.classList.add("upload-done-announcement-message");
+        this.uploadDoneAnnouncementButton.appendChild(this.uploadDoneAnnouncementTitle);
+        this.uploadDoneAnnouncementButton.appendChild(this.uploadDoneAnnouncementMessage);
+        this.uploadDoneAnnouncementButton.style.display = "none";
+        this.uploadDoneAnnouncementButton.addEventListener("click", () => {
+            if (this.uploadDoneAnnouncementHideTimer != null) {
+                clearTimeout(this.uploadDoneAnnouncementHideTimer);
+                this.uploadDoneAnnouncementHideTimer = null;
+            }
+            this.uploadDoneAnnouncementButton.style.display = "none";
+        });
+        document.body.appendChild(this.uploadDoneAnnouncementButton);
         const openSettings = () => {
             setSidebarExtended(false);
             const sidebarRoot = getSidebarRoot();
@@ -1996,9 +2016,39 @@ class ViewerSidebar {
         this.mouseMode.mount(mouseModeContainer);
         this.pcPanelView.appendChild(pcPanelContent);
         this.div.appendChild(this.pcPanelView);
-        // ---- Common section (Stats, Fullscreen, Exit) ----
+        // ---- Common section (Upload, Fullscreen, Exit) ----
         this.commonSection = document.createElement("div");
         this.commonSection.classList.add("sidebar-common", "sidebar-stream-buttons");
+        this.uploadFileButton = document.createElement("button");
+        this.uploadFileButton.classList.add("sidebar-upload-btn");
+        this.uploadFileButton.appendChild(document.createTextNode("UP FILE"));
+        const uploadFileInput = document.createElement("input");
+        uploadFileInput.type = "file";
+        uploadFileInput.style.display = "none";
+        uploadFileInput.addEventListener("change", () => __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            const selectedFile = (_a = uploadFileInput.files) === null || _a === void 0 ? void 0 : _a[0];
+            if (!selectedFile) {
+                return;
+            }
+            try {
+                this.uploadFileButton.disabled = true;
+                const stream = this.app.getStream();
+                if (!stream) {
+                    return;
+                }
+                yield stream.uploadFileToHost(selectedFile);
+                this.showUploadDoneAnnouncement(selectedFile.name);
+            }
+            catch (e) {
+                console.warn("[Stream]: upload from sidebar failed", e);
+            }
+            finally {
+                this.uploadFileButton.disabled = false;
+                uploadFileInput.value = "";
+            }
+        }));
+        this.uploadFileButton.addEventListener("click", () => uploadFileInput.click());
         this.fullscreenButton = document.createElement("button");
         this.fullscreenButton.classList.add("sidebar-btn-with-icon", "sidebar-fullscreen-btn");
         const fullscreenIcon = document.createElement("img");
@@ -2047,6 +2097,8 @@ class ViewerSidebar {
             else
                 window.close();
         }));
+        this.commonSection.appendChild(this.uploadFileButton);
+        this.commonSection.appendChild(uploadFileInput);
         this.commonSection.appendChild(this.fullscreenButton);
         this.commonSection.appendChild(this.exitStreamButton);
         this.div.appendChild(this.commonSection);
@@ -2061,6 +2113,18 @@ class ViewerSidebar {
     }
     onCapabilitiesChange(capabilities) {
         this.touchMode.setOptionEnabled("touch", capabilities.touch);
+    }
+    showUploadDoneAnnouncement(fileName) {
+        const safeFileName = (fileName || "").trim() || "file";
+        this.uploadDoneAnnouncementMessage.textContent = `Up Load '${safeFileName}' done, please check the file on the desktop`;
+        this.uploadDoneAnnouncementButton.style.display = "inline-flex";
+        if (this.uploadDoneAnnouncementHideTimer != null) {
+            clearTimeout(this.uploadDoneAnnouncementHideTimer);
+        }
+        this.uploadDoneAnnouncementHideTimer = setTimeout(() => {
+            this.uploadDoneAnnouncementButton.style.display = "none";
+            this.uploadDoneAnnouncementHideTimer = null;
+        }, 5000);
     }
     getScreenKeyboard() {
         return this.screenKeyboard;
