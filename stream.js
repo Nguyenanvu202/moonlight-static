@@ -12,7 +12,7 @@ import { getApi } from "./api.js";
 import { showErrorPopup } from "./component/error.js";
 import { Stream } from "./stream/index.js";
 import { getModalBackground, showMessage, showModal } from "./component/modal/index.js";
-import { getSidebarRoot, setSidebar, setSidebarExtended, setSidebarStyle } from "./component/sidebar/index.js";
+import { getSidebarDragOffsetY, getSidebarRoot, setSidebar, setSidebarExtended, setSidebarStyle } from "./component/sidebar/index.js";
 import { defaultStreamInputConfig } from "./stream/input.js";
 import { exportAppSettingsToFile, getSettingsForApp, importAppSettingsFromJson, loadStaticAppSettingsFile, setSettingsForApp, } from "./app_settings.js";
 import { StreamSettingsComponent } from "./component/settings_menu.js";
@@ -236,6 +236,7 @@ class ViewerApp {
         this.keyWatchdogInterval = null;
         this.devConnectionLog = null;
         this.devConnectionLogPoll = null;
+        this.lastSidebarAnchorKey = "";
         this.streamConnectionConsoleLogger = new StreamConnectionInfoConsoleLogger();
         this.isTogglingFullscreenWithKeybind = "none";
         this.api = api;
@@ -338,8 +339,9 @@ class ViewerApp {
     }
     startStream(hostId, appId, settings, browserSize) {
         return __awaiter(this, void 0, void 0, function* () {
+            // Hard-lock sidebar/icon to the left edge.
             setSidebarStyle({
-                edge: settings.sidebarEdge,
+                edge: "left",
             });
             MoonlightLoadingScreen.show();
             this.stream = new Stream(this.api, hostId, appId, settings, browserSize);
@@ -354,6 +356,7 @@ class ViewerApp {
             this.onGamepadUpdate();
             this.stream.getInput().addScreenKeyboardVisibleEvent(this.onScreenKeyboardSetVisible.bind(this));
             this.stream.mount(this.div);
+            this.moveSidebarRootIntoStreamLayer();
         });
     }
     getAppId() {
@@ -668,6 +671,7 @@ class ViewerApp {
     onTouchUpdate() {
         var _a;
         (_a = this.stream) === null || _a === void 0 ? void 0 : _a.getInput().onTouchUpdate(this.getStreamRect());
+        this.updateSidebarAnchorToStreamRect();
         window.requestAnimationFrame(this.onTouchUpdate.bind(this));
     }
     onTouchMove(event) {
@@ -1117,6 +1121,7 @@ class ViewerApp {
         else {
             setSidebar(this.sidebar);
         }
+        this.updateSidebarAnchorToStreamRect();
     }
     mount(parent) {
         parent.appendChild(this.div);
@@ -1134,6 +1139,91 @@ class ViewerApp {
         // The bounding rect of the videoElement or canvasElement can be bigger than the actual video
         // -> We need to correct for this when sending positions, else positions are wrong
         return (_c = (_b = (_a = this.stream) === null || _a === void 0 ? void 0 : _a.getVideoRenderer()) === null || _b === void 0 ? void 0 : _b.getStreamRect()) !== null && _c !== void 0 ? _c : new DOMRect();
+    }
+    updateSidebarAnchorToStreamRect() {
+        const sidebarRoot = getSidebarRoot();
+        if (!sidebarRoot) {
+            return;
+        }
+        this.moveSidebarRootIntoStreamLayer();
+        const streamRect = this.getStreamRect();
+        const viewportWidth = Math.max(document.documentElement.clientWidth || 0, window.innerWidth || 0);
+        const viewportHeight = Math.max(document.documentElement.clientHeight || 0, window.innerHeight || 0);
+        const hasValidRect = streamRect.width > 0 && streamRect.height > 0;
+        if (!hasValidRect) {
+            if (this.lastSidebarAnchorKey !== "viewport") {
+                sidebarRoot.style.left = "";
+                sidebarRoot.style.right = "";
+                sidebarRoot.style.top = "";
+                sidebarRoot.style.bottom = "";
+                this.lastSidebarAnchorKey = "viewport";
+            }
+            return;
+        }
+        const edge = "left";
+        const streamLeft = Math.max(0, Math.min(viewportWidth, streamRect.left));
+        const streamRightInset = Math.max(0, Math.min(viewportWidth, viewportWidth - streamRect.right));
+        const streamTop = Math.max(0, Math.min(viewportHeight, streamRect.top));
+        const streamBottom = Math.max(0, Math.min(viewportHeight, streamRect.bottom));
+        const streamBottomInset = Math.max(0, Math.min(viewportHeight, viewportHeight - streamRect.bottom));
+        const streamCenterX = Math.max(0, Math.min(viewportWidth, streamRect.left + (streamRect.width / 2)));
+        const streamCenterY = Math.max(0, Math.min(viewportHeight, streamRect.top + (streamRect.height / 2)));
+        const dragOffsetY = getSidebarDragOffsetY();
+        const sidebarBackground = sidebarRoot.querySelector(".sidebar-background");
+        const sidebarBackgroundRect = sidebarBackground === null || sidebarBackground === void 0 ? void 0 : sidebarBackground.getBoundingClientRect();
+        const sidebarHalfHeight = Math.max(24, ((sidebarBackgroundRect === null || sidebarBackgroundRect === void 0 ? void 0 : sidebarBackgroundRect.height) || 48) / 2);
+        const anchorKey = `${edge}:${Math.round(streamLeft)}:${Math.round(streamRightInset)}:${Math.round(streamTop)}:${Math.round(streamBottomInset)}:${Math.round(streamCenterX)}:${Math.round(streamCenterY)}:${Math.round(sidebarHalfHeight)}:${Math.round(dragOffsetY)}`;
+        if (anchorKey === this.lastSidebarAnchorKey) {
+            return;
+        }
+        sidebarRoot.style.left = "";
+        sidebarRoot.style.right = "";
+        sidebarRoot.style.top = "";
+        sidebarRoot.style.bottom = "";
+        const minTop = streamTop + sidebarHalfHeight;
+        const maxTop = streamBottom - sidebarHalfHeight;
+        const fallbackTop = Math.max(streamTop, Math.min(streamBottom, streamCenterY));
+        const clampSidebarTop = (desiredTop) => {
+            if (minTop > maxTop) {
+                return fallbackTop;
+            }
+            return Math.max(minTop, Math.min(maxTop, desiredTop));
+        };
+        if (edge === "right") {
+            sidebarRoot.style.right = `${streamRightInset}px`;
+            const desiredTop = streamCenterY + dragOffsetY;
+            const clampedTop = clampSidebarTop(desiredTop);
+            sidebarRoot.style.top = `${clampedTop}px`;
+        }
+        else if (edge === "up") {
+            sidebarRoot.style.left = `${streamCenterX}px`;
+            sidebarRoot.style.top = `${streamTop}px`;
+        }
+        else if (edge === "down") {
+            sidebarRoot.style.left = `${streamCenterX}px`;
+            sidebarRoot.style.bottom = `${streamBottomInset}px`;
+        }
+        else {
+            sidebarRoot.style.left = `${streamLeft}px`;
+            const desiredTop = streamCenterY + dragOffsetY;
+            const clampedTop = clampSidebarTop(desiredTop);
+            sidebarRoot.style.top = `${clampedTop}px`;
+        }
+        this.lastSidebarAnchorKey = anchorKey;
+    }
+    moveSidebarRootIntoStreamLayer() {
+        const sidebarRoot = getSidebarRoot();
+        const streamLayer = this.stream && this.stream.divElement instanceof HTMLElement ? this.stream.divElement : null;
+        if (!sidebarRoot || !streamLayer) {
+            return;
+        }
+        if (sidebarRoot.parentElement !== streamLayer) {
+            streamLayer.appendChild(sidebarRoot);
+        }
+        const videoNode = streamLayer.querySelector("video.video-stream, canvas.video-stream");
+        if (videoNode && sidebarRoot.nextSibling !== videoNode) {
+            streamLayer.insertBefore(sidebarRoot, videoNode);
+        }
     }
     getStream() {
         return this.stream;
@@ -1314,7 +1404,6 @@ class ConnectionInfoModal {
 /** Modal that shows the Moonlight streaming settings panel (bitrate, fps, video size, etc.). */
 const SETTINGS_NAV_LABELS = [
     "Video",
-    "Sidebar",
     "Audio",
     "Controls",
     "Other",
@@ -1351,13 +1440,13 @@ class SettingsPanelModal {
             setSettingsForApp(this.app.getAppId(), s);
             setPageStyle(s.pageStyle);
         });
-        // Body: sidebar + content area with 5 panels (Video includes speed test)
+        // Body: sidebar + content area with 4 panels (Video includes speed test)
         const body = document.createElement("div");
         body.classList.add("settings-body");
         const sidebar = document.createElement("nav");
         sidebar.classList.add("settings-sidebar");
         this.panels = [];
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < SETTINGS_NAV_LABELS.length; i++) {
             const panel = document.createElement("div");
             panel.classList.add("settings-panel");
             panel.setAttribute("data-panel", String(i));
@@ -1370,12 +1459,10 @@ class SettingsPanelModal {
             if (i === 0)
                 navItem.classList.add("settings-nav-item-video");
             if (i === 1)
-                navItem.classList.add("settings-nav-item-sidebar");
-            if (i === 2)
                 navItem.classList.add("settings-nav-item-audio");
-            if (i === 3)
+            if (i === 2)
                 navItem.classList.add("settings-nav-item-controls");
-            if (i === 4)
+            if (i === 3)
                 navItem.classList.add("settings-nav-item-other");
             navItem.setAttribute("data-panel", String(i));
             navItem.innerText = SETTINGS_NAV_LABELS[i];
@@ -1501,12 +1588,11 @@ class SettingsPanelModal {
         const sectionDivs = this.settingsComponent.divElement.querySelectorAll(".settings-section");
         this.panels[0].appendChild(speedtestContainer);
         this.panels[0].appendChild(sectionDivs[1]);
-        // Panels 1–4: sidebar, audio, controls (mouse+controller), other
-        this.panels[1].appendChild(sectionDivs[0]);
-        this.panels[2].appendChild(sectionDivs[2]);
-        this.panels[3].appendChild(sectionDivs[3]);
-        this.panels[3].appendChild(sectionDivs[4]);
-        this.panels[4].appendChild(sectionDivs[5]);
+        // Panels 1–3: audio, controls (mouse+controller), other
+        this.panels[1].appendChild(sectionDivs[2]);
+        this.panels[2].appendChild(sectionDivs[3]);
+        this.panels[2].appendChild(sectionDivs[4]);
+        this.panels[3].appendChild(sectionDivs[5]);
         // Per-app settings export/import (dist)
         const fileSection = document.createElement("div");
         fileSection.classList.add("settings-panel-inner");
@@ -1542,8 +1628,8 @@ class SettingsPanelModal {
         importBtn.addEventListener("click", () => importInput.click());
         fileSection.appendChild(importBtn);
         fileSection.appendChild(importInput);
-        this.panels[4].appendChild(fileSection);
-        for (let i = 0; i < 5; i++)
+        this.panels[3].appendChild(fileSection);
+        for (let i = 0; i < SETTINGS_NAV_LABELS.length; i++)
             this.content.appendChild(this.panels[i]);
         body.appendChild(sidebar);
         body.appendChild(this.content);
@@ -1671,6 +1757,7 @@ class ViewerSidebar {
     constructor(app) {
         this.app = app;
         this.selectedMode = null; // null | "pc" | "phone"
+        this.uploadDoneAnnouncementHideTimer = null;
         this.div = document.createElement("div");
         this.div.classList.add("sidebar-stream");
         this.screenKeyboard = new ScreenKeyboard();
@@ -1678,9 +1765,33 @@ class ViewerSidebar {
         this.screenKeyboard.addKeyUpListener(this.onKeyUp.bind(this));
         this.screenKeyboard.addTextListener(this.onText.bind(this));
         this.div.appendChild(this.screenKeyboard.getHiddenElement());
+        this.uploadDoneAnnouncementButton = document.createElement("button");
+        this.uploadDoneAnnouncementButton.classList.add("upload-done-announcement");
+        this.uploadDoneAnnouncementButton.type = "button";
+        this.uploadDoneAnnouncementTitle = document.createElement("span");
+        this.uploadDoneAnnouncementTitle.classList.add("upload-done-announcement-title");
+        this.uploadDoneAnnouncementTitle.textContent = "NextGPU announces";
+        this.uploadDoneAnnouncementMessage = document.createElement("span");
+        this.uploadDoneAnnouncementMessage.classList.add("upload-done-announcement-message");
+        this.uploadDoneAnnouncementButton.appendChild(this.uploadDoneAnnouncementTitle);
+        this.uploadDoneAnnouncementButton.appendChild(this.uploadDoneAnnouncementMessage);
+        this.uploadDoneAnnouncementButton.style.display = "none";
+        this.uploadDoneAnnouncementButton.addEventListener("click", () => {
+            if (this.uploadDoneAnnouncementHideTimer != null) {
+                clearTimeout(this.uploadDoneAnnouncementHideTimer);
+                this.uploadDoneAnnouncementHideTimer = null;
+            }
+            this.uploadDoneAnnouncementButton.style.display = "none";
+        });
+        document.body.appendChild(this.uploadDoneAnnouncementButton);
         const openSettings = () => {
             setSidebarExtended(false);
-            showModal(new SettingsPanelModal(this.app));
+            const sidebarRoot = getSidebarRoot();
+            sidebarRoot === null || sidebarRoot === void 0 ? void 0 : sidebarRoot.classList.add("sidebar-settings-hidden");
+            showModal(new SettingsPanelModal(this.app))
+                .finally(() => {
+                sidebarRoot === null || sidebarRoot === void 0 ? void 0 : sidebarRoot.classList.remove("sidebar-settings-hidden");
+            });
         };
         // ---- Mode selection view (tier 1) ----
         this.modeSelectView = document.createElement("div");
@@ -1905,9 +2016,39 @@ class ViewerSidebar {
         this.mouseMode.mount(mouseModeContainer);
         this.pcPanelView.appendChild(pcPanelContent);
         this.div.appendChild(this.pcPanelView);
-        // ---- Common section (Stats, Fullscreen, Exit) ----
+        // ---- Common section (Upload, Fullscreen, Exit) ----
         this.commonSection = document.createElement("div");
         this.commonSection.classList.add("sidebar-common", "sidebar-stream-buttons");
+        this.uploadFileButton = document.createElement("button");
+        this.uploadFileButton.classList.add("sidebar-upload-btn");
+        this.uploadFileButton.appendChild(document.createTextNode("UP FILE"));
+        const uploadFileInput = document.createElement("input");
+        uploadFileInput.type = "file";
+        uploadFileInput.style.display = "none";
+        uploadFileInput.addEventListener("change", () => __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            const selectedFile = (_a = uploadFileInput.files) === null || _a === void 0 ? void 0 : _a[0];
+            if (!selectedFile) {
+                return;
+            }
+            try {
+                this.uploadFileButton.disabled = true;
+                const stream = this.app.getStream();
+                if (!stream) {
+                    return;
+                }
+                yield stream.uploadFileToHost(selectedFile);
+                this.showUploadDoneAnnouncement(selectedFile.name);
+            }
+            catch (e) {
+                console.warn("[Stream]: upload from sidebar failed", e);
+            }
+            finally {
+                this.uploadFileButton.disabled = false;
+                uploadFileInput.value = "";
+            }
+        }));
+        this.uploadFileButton.addEventListener("click", () => uploadFileInput.click());
         this.fullscreenButton = document.createElement("button");
         this.fullscreenButton.classList.add("sidebar-btn-with-icon", "sidebar-fullscreen-btn");
         const fullscreenIcon = document.createElement("img");
@@ -1956,6 +2097,8 @@ class ViewerSidebar {
             else
                 window.close();
         }));
+        this.commonSection.appendChild(this.uploadFileButton);
+        this.commonSection.appendChild(uploadFileInput);
         this.commonSection.appendChild(this.fullscreenButton);
         this.commonSection.appendChild(this.exitStreamButton);
         this.div.appendChild(this.commonSection);
@@ -1970,6 +2113,18 @@ class ViewerSidebar {
     }
     onCapabilitiesChange(capabilities) {
         this.touchMode.setOptionEnabled("touch", capabilities.touch);
+    }
+    showUploadDoneAnnouncement(fileName) {
+        const safeFileName = (fileName || "").trim() || "file";
+        this.uploadDoneAnnouncementMessage.textContent = `Up Load '${safeFileName}' done, please check the file on the desktop`;
+        this.uploadDoneAnnouncementButton.style.display = "inline-flex";
+        if (this.uploadDoneAnnouncementHideTimer != null) {
+            clearTimeout(this.uploadDoneAnnouncementHideTimer);
+        }
+        this.uploadDoneAnnouncementHideTimer = setTimeout(() => {
+            this.uploadDoneAnnouncementButton.style.display = "none";
+            this.uploadDoneAnnouncementHideTimer = null;
+        }, 5000);
     }
     getScreenKeyboard() {
         return this.screenKeyboard;
